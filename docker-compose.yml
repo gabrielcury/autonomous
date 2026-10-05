@@ -27,8 +27,8 @@ services:
       # Telegram Bot Settings
       - TELEGRAM_BOT_TOKEN=${TELEGRAM_BOT_TOKEN}
       - TELEGRAM_ALLOWED_USERS=${TELEGRAM_ALLOWED_USERS}
-      # SRE Watchdog Thresholds
-      - AUTO_MONITOR_ENABLED=${AUTO_MONITOR_ENABLED:-true}
+      # SRE Watchdog Thresholds (Inicia sempre parado por padrão)
+      - AUTO_MONITOR_ENABLED=${AUTO_MONITOR_ENABLED:-false}
       - MONITOR_INTERVAL_SECONDS=${MONITOR_INTERVAL_SECONDS:-30}
       - ALERT_CPU_THRESHOLD=${ALERT_CPU_THRESHOLD:-85.0}
       - ALERT_MEM_THRESHOLD=${ALERT_MEM_THRESHOLD:-85.0}
