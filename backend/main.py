@@ -476,25 +476,27 @@ async def ws_telemetry(websocket: WebSocket):
 # Static files / Frontend
 # -----------------------------------------------------------------------------
 frontend_dist = Path(__file__).resolve().parent.parent / "frontend" / "dist"
-assets_dir = frontend_dist / "assets"
+backend_static = Path(__file__).resolve().parent / "static"
+dist_path = frontend_dist if frontend_dist.exists() else backend_static
 
+assets_dir = dist_path / "assets"
 if assets_dir.exists():
     app.mount("/assets", StaticFiles(directory=str(assets_dir)), name="assets")
 
-if frontend_dist.exists():
+if dist_path.exists() and (dist_path / "index.html").exists():
     @app.get("/")
     async def serve_index():
-        return FileResponse(frontend_dist / "index.html")
+        return FileResponse(dist_path / "index.html")
 
     @app.get("/{full_path:path}")
     async def serve_spa_fallback(full_path: str):
         # Don't hijack API or WS routes
         if full_path.startswith("api/") or full_path.startswith("ws/"):
             raise HTTPException(status_code=404, detail="Not found")
-        file_path = frontend_dist / full_path
+        file_path = dist_path / full_path
         if file_path.is_file():
             return FileResponse(file_path)
-        return FileResponse(frontend_dist / "index.html")
+        return FileResponse(dist_path / "index.html")
 else:
     @app.get("/")
     def index_fallback():

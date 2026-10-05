@@ -1,7 +1,7 @@
 version: "3.8"
 
 services:
-  aegis-sre:
+  aegis-sre-agent:
     build:
       context: .
       dockerfile: Dockerfile
@@ -32,19 +32,12 @@ services:
       - MONITOR_INTERVAL_SECONDS=${MONITOR_INTERVAL_SECONDS:-30}
       - ALERT_CPU_THRESHOLD=${ALERT_CPU_THRESHOLD:-85.0}
       - ALERT_MEM_THRESHOLD=${ALERT_MEM_THRESHOLD:-85.0}
-    networks:
-      - aegis-network
     healthcheck:
       test: ["CMD", "curl", "-f", "http://localhost:8000/api/status"]
       interval: 30s
       timeout: 5s
       retries: 3
       start_period: 15s
-
-networks:
-  aegis-network:
-    name: aegis-sre-network
-    driver: bridge
 
 volumes:
   aegis_data:

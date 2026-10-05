@@ -46,34 +46,40 @@ class DockerManager:
                 containers = self.client.containers.list(all=all)
                 result = []
                 for c in containers:
-                    attrs = c.attrs
-                    state = attrs.get("State", {})
-                    created = attrs.get("Created", "")
-                    image_name = c.image.tags[0] if c.image.tags else c.image.short_id
-                    
-                    # Compute ports
-                    ports_raw = attrs.get("NetworkSettings", {}).get("Ports", {}) or {}
-                    ports_list = []
-                    for container_port, host_bindings in ports_raw.items():
-                        if host_bindings:
-                            for b in host_bindings:
-                                ports_list.append(f"{b.get('HostPort')}:{container_port}")
-                        else:
-                            ports_list.append(container_port)
+                    try:
+                        attrs = c.attrs
+                        state = attrs.get("State", {})
+                        created = attrs.get("Created", "")
+                        try:
+                            image_name = c.image.tags[0] if (c.image and c.image.tags) else (c.image.short_id if c.image else "unknown")
+                        except Exception:
+                            image_name = attrs.get("Config", {}).get("Image", "unknown")
+                        
+                        # Compute ports
+                        ports_raw = attrs.get("NetworkSettings", {}).get("Ports", {}) or {}
+                        ports_list = []
+                        for container_port, host_bindings in ports_raw.items():
+                            if host_bindings:
+                                for b in host_bindings:
+                                    ports_list.append(f"{b.get('HostPort')}:{container_port}")
+                            else:
+                                ports_list.append(container_port)
 
-                    result.append({
-                        "id": c.short_id,
-                        "full_id": c.id,
-                        "name": c.name.lstrip("/"),
-                        "image": image_name,
-                        "status": c.status, # running, exited, paused, restarting
-                        "state_detail": state.get("Status", c.status),
-                        "created": created,
-                        "uptime": state.get("StartedAt", ""),
-                        "ports": ports_list,
-                        "ip_address": attrs.get("NetworkSettings", {}).get("IPAddress", ""),
-                        "is_simulated": False
-                    })
+                        result.append({
+                            "id": c.short_id,
+                            "full_id": c.id,
+                            "name": c.name.lstrip("/"),
+                            "image": image_name,
+                            "status": c.status, # running, exited, paused, restarting
+                            "state_detail": state.get("Status", c.status),
+                            "created": created,
+                            "uptime": state.get("StartedAt", ""),
+                            "ports": ports_list,
+                            "ip_address": attrs.get("NetworkSettings", {}).get("IPAddress", ""),
+                            "is_simulated": False
+                        })
+                    except Exception as item_err:
+                        continue
                 return result
             except Exception as e:
                 logger.error(f"Error fetching containers from real Docker: {e}")
