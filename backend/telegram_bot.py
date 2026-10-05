@@ -669,6 +669,9 @@ class TelegramAegisBot:
                     pass
 
     async def _send_photo(self, client: httpx.AsyncClient, chat_id: int, photo_bytes: bytes, caption: str, reply_markup: Optional[Dict] = None):
+        if not photo_bytes:
+            await self._send_message(client, chat_id, caption, reply_markup)
+            return
         files = {
             "photo": ("sre_chart.png", photo_bytes, "image/png")
         }
@@ -679,7 +682,12 @@ class TelegramAegisBot:
         }
         if reply_markup:
             data["reply_markup"] = json.dumps(reply_markup)
-        await client.post(f"{self.api_base}/sendPhoto", data=data, files=files)
+        try:
+            resp = await client.post(f"{self.api_base}/sendPhoto", data=data, files=files)
+            if resp.status_code != 200:
+                await self._send_message(client, chat_id, caption, reply_markup)
+        except Exception:
+            await self._send_message(client, chat_id, caption, reply_markup)
 
     async def _send_message(self, client: httpx.AsyncClient, chat_id: int, text: str, reply_markup: Optional[Dict] = None):
         payload: Dict[str, Any] = {

@@ -1,7 +1,19 @@
 import io
 import math
+import logging
 from typing import List, Dict, Any, Tuple
-from PIL import Image, ImageDraw, ImageFont
+
+logger = logging.getLogger("aegis_chart")
+
+try:
+    from PIL import Image, ImageDraw, ImageFont
+    HAS_PIL = True
+except ImportError:
+    HAS_PIL = False
+    Image = None
+    ImageDraw = None
+    ImageFont = None
+    logger.warning("Pillow (PIL) is not installed. Fallback mode active.")
 
 class SREChartGenerator:
     """Generates high-resolution dark-themed PNG charts for Telegram Bot and SRE reports."""
@@ -22,6 +34,8 @@ class SREChartGenerator:
 
     def generate_cpu_ram_trend(self, cpu_current: float = 12.4, ram_current: float = 45.0) -> bytes:
         """Generates a 700x380px line chart showing 24-hour CPU and RAM history."""
+        if not HAS_PIL:
+            return b""
         width, height = 720, 400
         img = Image.new("RGB", (width, height), color=self.bg_color)
         draw = ImageDraw.Draw(img)
@@ -118,6 +132,8 @@ class SREChartGenerator:
 
     def generate_container_memory_bars(self, containers: List[Dict[str, Any]] = None) -> bytes:
         """Generates a 720x420px horizontal bar chart comparing container memory allocations."""
+        if not HAS_PIL:
+            return b""
         if not containers:
             containers = [
                 {"name": "php-ecommerce-api", "memory_mb": 420.0, "status": "warning"},
@@ -182,6 +198,8 @@ class SREChartGenerator:
 
     def generate_network_traffic_chart(self, kb_recv: float = 342.1, kb_sent: float = 128.4) -> bytes:
         """Generates a 720x380px network throughput area chart."""
+        if not HAS_PIL:
+            return b""
         width, height = 720, 380
         img = Image.new("RGB", (width, height), color=self.bg_color)
         draw = ImageDraw.Draw(img)
