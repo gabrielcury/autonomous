@@ -1,0 +1,55 @@
+version: "3.8"
+
+services:
+  aegis-sre:
+    build:
+      context: .
+      dockerfile: Dockerfile
+    image: aegis-sre:latest
+    container_name: aegis-sre-agent
+    restart: unless-stopped
+    ports:
+      - "${PORT:-8000}:8000"
+    volumes:
+      # Mount Docker socket to allow SRE agent to supervise, inspect, and manage containers
+      - /var/run/docker.sock:/var/run/docker.sock:rw
+      # Persistent storage for backups, state and generated IaC
+      - aegis_data:/app/data
+      - aegis_backups:/app/backups
+      - aegis_iac:/app/iac_output
+    environment:
+      - PORT=8000
+      - HOST=0.0.0.0
+      # Groq LLM (Free tier: llama-3.3-70b-versatile, whisper-large-v3)
+      - GROQ_API_KEY=${GROQ_API_KEY}
+      - GROQ_MODEL=${GROQ_MODEL:-llama-3.3-70b-versatile}
+      - GROQ_WHISPER_MODEL=${GROQ_WHISPER_MODEL:-whisper-large-v3}
+      # Telegram Bot Settings
+      - TELEGRAM_BOT_TOKEN=${TELEGRAM_BOT_TOKEN}
+      - TELEGRAM_ALLOWED_USERS=${TELEGRAM_ALLOWED_USERS}
+      # SRE Watchdog Thresholds
+      - AUTO_MONITOR_ENABLED=${AUTO_MONITOR_ENABLED:-true}
+      - MONITOR_INTERVAL_SECONDS=${MONITOR_INTERVAL_SECONDS:-30}
+      - ALERT_CPU_THRESHOLD=${ALERT_CPU_THRESHOLD:-85.0}
+      - ALERT_MEM_THRESHOLD=${ALERT_MEM_THRESHOLD:-85.0}
+    networks:
+      - aegis-network
+    healthcheck:
+      test: ["CMD", "curl", "-f", "http://localhost:8000/api/status"]
+      interval: 30s
+      timeout: 5s
+      retries: 3
+      start_period: 15s
+
+networks:
+  aegis-network:
+    name: aegis-sre-network
+    driver: bridge
+
+volumes:
+  aegis_data:
+    name: aegis_sre_data
+  aegis_backups:
+    name: aegis_sre_backups
+  aegis_iac:
+    name: aegis_sre_iac

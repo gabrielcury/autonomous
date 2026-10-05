@@ -1,0 +1,72 @@
+{
+  "name": "aegis-sre",
+  "version": "1.0.0",
+  "description": "Agente Autônomo SRE & DevOps Arquiteto para Easypanel + Docker com Bot no Telegram e IA Groq",
+  "logo": "https://raw.githubusercontent.com/easypanel-io/templates/main/templates/docker/logo.png",
+  "services": [
+    {
+      "type": "app",
+      "data": {
+        "projectName": "aegis-sre",
+        "serviceName": "aegis-agent",
+        "source": {
+          "type": "git",
+          "repo": "https://github.com/your-username/aegis-sre.git",
+          "ref": "main",
+          "path": "/"
+        },
+        "build": {
+          "type": "dockerfile",
+          "file": "Dockerfile"
+        },
+        "ports": [
+          {
+            "published": 8000,
+            "target": 8000,
+            "protocol": "tcp"
+          }
+        ],
+        "mounts": [
+          {
+            "type": "bind",
+            "hostPath": "/var/run/docker.sock",
+            "mountPath": "/var/run/docker.sock"
+          },
+          {
+            "type": "volume",
+            "name": "aegis_data",
+            "mountPath": "/app/data"
+          },
+          {
+            "type": "volume",
+            "name": "aegis_backups",
+            "mountPath": "/app/backups"
+          },
+          {
+            "type": "volume",
+            "name": "aegis_iac",
+            "mountPath": "/app/iac_output"
+          }
+        ],
+        "env": [
+          {
+            "name": "PORT",
+            "value": "8000"
+          },
+          {
+            "name": "GROQ_API_KEY",
+            "value": ""
+          },
+          {
+            "name": "TELEGRAM_BOT_TOKEN",
+            "value": ""
+          },
+          {
+            "name": "TELEGRAM_ALLOWED_USERS",
+            "value": ""
+          }
+        ]
+      }
+    }
+  ]
+}
