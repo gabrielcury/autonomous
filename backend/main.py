@@ -66,6 +66,19 @@ async def autonomous_monitor_worker():
                         _last_broadcast_times["HIGH_MEM"] = now
                         await telegram_bot.send_broadcast_alert("Alerta de Memória Crítica", msg, severity="CRITICAL")
 
+                # Monitoramento de Espaço em Disco
+                disks = overview.get("disks", [])
+                for d in disks:
+                    d_pct = d.get("percent", 0.0)
+                    m = d.get("mountpoint") or d.get("device") or "/"
+                    if d_pct > settings.ALERT_DISK_THRESHOLD:
+                        msg = f"Espaço em disco crítico em '{m}': {d_pct}% utilizado ({d.get('used_gb')}GB de {d.get('total_gb')}GB, Limite: {settings.ALERT_DISK_THRESHOLD}%)"
+                        sre_activity_log.append({"timestamp": now, "type": "ALERT", "category": "HIGH_DISK", "message": msg})
+                        key = f"HIGH_DISK_{m}"
+                        if now - _last_broadcast_times.get(key, 0.0) >= ALERT_BROADCAST_COOLDOWN:
+                            _last_broadcast_times[key] = now
+                            await telegram_bot.send_broadcast_alert("🚨 Alerta de Espaço em Disco", msg, severity="CRITICAL")
+
             # Prune old logs
             if len(sre_activity_log) > 200:
                 sre_activity_log[:] = sre_activity_log[-100:]
@@ -120,6 +133,7 @@ class SettingsUpdateRequest(BaseModel):
     auto_monitor_enabled: Optional[bool] = None
     alert_cpu_threshold: Optional[float] = None
     alert_mem_threshold: Optional[float] = None
+    alert_disk_threshold: Optional[float] = None
 
 class CodeTraceRequest(BaseModel):
     container_name: str
@@ -144,6 +158,11 @@ def get_system_status():
         health_score -= 20
     if overview["memory"]["percent"] > 85:
         health_score -= 25
+    for d in overview.get("disks", []):
+        if d.get("percent", 0) > settings.ALERT_DISK_THRESHOLD:
+            health_score -= 25
+        elif d.get("percent", 0) > 80:
+            health_score -= 10
     for c in containers:
         if c.get("health") == "warning":
             health_score -= 10
@@ -411,6 +430,7 @@ def get_settings():
         "auto_monitor_enabled": settings.AUTO_MONITOR_ENABLED,
         "alert_cpu_threshold": settings.ALERT_CPU_THRESHOLD,
         "alert_mem_threshold": settings.ALERT_MEM_THRESHOLD,
+        "alert_disk_threshold": settings.ALERT_DISK_THRESHOLD,
         "docker_socket": settings.DOCKER_SOCKET,
         "is_docker_connected": docker_manager.is_connected
     }
@@ -436,6 +456,8 @@ async def update_settings(req: SettingsUpdateRequest):
         settings.ALERT_CPU_THRESHOLD = req.alert_cpu_threshold
     if req.alert_mem_threshold is not None:
         settings.ALERT_MEM_THRESHOLD = req.alert_mem_threshold
+    if req.alert_disk_threshold is not None:
+        settings.ALERT_DISK_THRESHOLD = req.alert_disk_threshold
 
     return {"success": True, "message": "Configurações atualizadas com sucesso."}
 

@@ -28,27 +28,54 @@ class HostMetricsCollector:
         mem = psutil.virtual_memory()
         swap = psutil.swap_memory()
 
-        # Disk (cached every 60s to prevent Windows partition blocking)
-        if not self._cached_disks or (now - self._last_disk_time) > 60:
+        # Disk (cached every 30s to prevent I/O blocking)
+        if not self._cached_disks or (now - self._last_disk_time) > 30:
             disks = []
+            seen_mounts = set()
             try:
-                # Primary system drive
-                main_path = "C:\\" if os.name == "nt" else "/"
-                usage = psutil.disk_usage(main_path)
-                disks.append({
-                    "device": main_path,
-                    "mountpoint": main_path,
-                    "fstype": "NTFS" if os.name == "nt" else "ext4",
-                    "total_gb": round(usage.total / (1024 ** 3), 2),
-                    "used_gb": round(usage.used / (1024 ** 3), 2),
-                    "free_gb": round(usage.free / (1024 ** 3), 2),
-                    "percent": usage.percent
-                })
+                partitions = psutil.disk_partitions(all=False)
+                for part in partitions:
+                    m = part.mountpoint
+                    if m in seen_mounts:
+                        continue
+                    # Skip read-only, loop, snap, cdrom or pseudo mounts
+                    if any(ign in part.device.lower() for ign in ["loop", "cdrom", "ram"]) or any(ign in m.lower() for ign in ["snap", "docker/overlay"]):
+                        continue
+                    try:
+                        usage = psutil.disk_usage(m)
+                        seen_mounts.add(m)
+                        disks.append({
+                            "device": part.device,
+                            "mountpoint": m,
+                            "fstype": part.fstype,
+                            "total_gb": round(usage.total / (1024 ** 3), 2),
+                            "used_gb": round(usage.used / (1024 ** 3), 2),
+                            "free_gb": round(usage.free / (1024 ** 3), 2),
+                            "percent": usage.percent
+                        })
+                    except (PermissionError, OSError):
+                        continue
             except Exception:
-                disks.append({
-                    "device": "/", "mountpoint": "/", "fstype": "ext4",
-                    "total_gb": 250.0, "used_gb": 42.5, "free_gb": 207.5, "percent": 17.0
-                })
+                pass
+
+            if not disks:
+                try:
+                    main_path = "C:\\" if os.name == "nt" else "/"
+                    usage = psutil.disk_usage(main_path)
+                    disks.append({
+                        "device": main_path,
+                        "mountpoint": main_path,
+                        "fstype": "NTFS" if os.name == "nt" else "ext4",
+                        "total_gb": round(usage.total / (1024 ** 3), 2),
+                        "used_gb": round(usage.used / (1024 ** 3), 2),
+                        "free_gb": round(usage.free / (1024 ** 3), 2),
+                        "percent": usage.percent
+                    })
+                except Exception:
+                    disks.append({
+                        "device": "/", "mountpoint": "/", "fstype": "ext4",
+                        "total_gb": 250.0, "used_gb": 42.5, "free_gb": 207.5, "percent": 17.0
+                    })
             self._cached_disks = disks
             self._last_disk_time = now
 

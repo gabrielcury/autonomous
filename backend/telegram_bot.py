@@ -219,6 +219,8 @@ class TelegramAegisBot:
             await self._send_status_card(client, chat_id)
         elif lower.startswith("/containers"):
             await self._send_containers_menu(client, chat_id)
+        elif lower.startswith("/disks") or lower.startswith("/disco"):
+            await self._send_disks_card(client, chat_id)
         elif lower.startswith("/sre_audit") or lower.startswith("/auditoria"):
             await self._send_sre_audit(client, chat_id)
         elif lower.startswith("/debug") or lower.startswith("/trace"):
@@ -270,6 +272,8 @@ class TelegramAegisBot:
             await self._send_cpu_ram_chart(client, chat_id)
         elif data == "chart_containers":
             await self._send_containers_chart(client, chat_id)
+        elif data == "chart_disks":
+            await self._send_disks_chart(client, chat_id)
         elif data == "chart_network":
             await self._send_network_chart(client, chat_id)
         elif data == "menu_status":
@@ -395,6 +399,7 @@ class TelegramAegisBot:
             "inline_keyboard": [
                 [{"text": "📉 CPU & Memória RAM (24h)", "callback_data": "chart_cpu_ram"}],
                 [{"text": "📊 Distribuição de Memória por Container", "callback_data": "chart_containers"}],
+                [{"text": "💿 Armazenamento & Discos (PNG)", "callback_data": "chart_disks"}],
                 [{"text": "🌐 Tráfego de Rede (Throughput I/O)", "callback_data": "chart_network"}],
                 [{"text": "⬅️ Voltar ao Menu Principal", "callback_data": "menu_main"}]
             ]
@@ -488,12 +493,83 @@ class TelegramAegisBot:
         }
         await self._send_photo(client, chat_id, png_bytes, caption, keyboard)
 
+    async def _send_disks_chart(self, client: httpx.AsyncClient, chat_id: int):
+        await self._send_message(client, chat_id, "⏳ *Renderizando gráfico de ocupação de discos e volumes...*")
+        overview = host_metrics.get_system_overview()
+        disks = overview.get("disks", [])
+        png_bytes = sre_chart_generator.generate_disk_usage_chart(disks)
+
+        total_used = sum(d.get("used_gb", 0.0) for d in disks)
+        total_cap = sum(d.get("total_gb", 0.0) for d in disks)
+        overall_pct = round((total_used / total_cap * 100.0), 1) if total_cap > 0 else 0.0
+
+        caption = (
+            f"💿 **Relatório de Armazenamento & Partições**\n\n"
+            f"• **Espaço Ocupado:** {total_used:.1f} GB de {total_cap:.1f} GB ({overall_pct}%)\n"
+            f"• **Partições Catalogadas:** {len(disks)}\n"
+            f"• **Limite para Alerta SRE:** {settings.ALERT_DISK_THRESHOLD}%\n"
+            f"• **Dica:** Utilize /clean para remover camadas órfãs de build e liberar espaço."
+        )
+        keyboard = {
+            "inline_keyboard": [
+                [{"text": "🧹 Limpar Cache (/clean)", "callback_data": "action_docker_prune"}],
+                [{"text": "⬅️ Voltar aos Gráficos", "callback_data": "menu_charts"}]
+            ]
+        }
+        await self._send_photo(client, chat_id, png_bytes, caption, keyboard)
+
+    async def _send_disks_card(self, client: httpx.AsyncClient, chat_id: int, edit_message_id: Optional[int] = None):
+        overview = host_metrics.get_system_overview()
+        disks = overview.get("disks", [])
+        total_used = sum(d.get("used_gb", 0.0) for d in disks)
+        total_cap = sum(d.get("total_gb", 0.0) for d in disks)
+        overall_pct = round((total_used / total_cap * 100.0), 1) if total_cap > 0 else 0.0
+
+        lines = [
+            "💿 **Monitoramento de Espaço em Disco & Armazenamento**\n",
+            f"📊 **Total no Host:** {total_used:.1f} GB de {total_cap:.1f} GB ({overall_pct}%)",
+            f"⚙️ **Limite de Alerta SRE:** {settings.ALERT_DISK_THRESHOLD}%\n"
+        ]
+        for d in disks:
+            m = d.get("mountpoint") or d.get("device") or "/"
+            pct = d.get("percent", 0.0)
+            status_icon = "🔴" if pct >= settings.ALERT_DISK_THRESHOLD else "🟡" if pct >= 75.0 else "🟢"
+            lines.append(
+                f"{status_icon} **`{m}`** ({d.get('fstype', 'ext4')})\n"
+                f"   `[{make_progress_bar(pct)}]` {pct}%\n"
+                f"   • {d.get('used_gb', 0)} GB usados • {d.get('free_gb', 0)} GB livres (Total: {d.get('total_gb', 0)} GB)"
+            )
+
+        text = "\n\n".join(lines)
+        keyboard = {
+            "inline_keyboard": [
+                [
+                    {"text": "📈 Ver Gráfico (PNG)", "callback_data": "chart_disks"},
+                    {"text": "🧹 Limpar Cache", "callback_data": "action_docker_prune"}
+                ],
+                [{"text": "⬅️ Voltar ao Menu Principal", "callback_data": "menu_main"}]
+            ]
+        }
+        if edit_message_id:
+            await self._edit_message(client, chat_id, edit_message_id, text, keyboard)
+        else:
+            await self._send_message(client, chat_id, text, keyboard)
+
     async def _send_status_card(self, client: httpx.AsyncClient, chat_id: int, edit_message_id: Optional[int] = None):
         overview = host_metrics.get_system_overview()
         mem = overview["memory"]
         cpu = overview["cpu"]
-        disks = overview["disks"]
-        main_disk = disks[0] if disks else {"percent": 0, "used_gb": 0, "total_gb": 0}
+        disks = overview.get("disks", [])
+
+        disk_blocks = []
+        for d in disks:
+            m = d.get("mountpoint") or d.get("device") or "/"
+            pct = d.get("percent", 0)
+            disk_blocks.append(
+                f"💿 **Disco `{m}` ({d.get('fstype', 'ext4')}):** `[{make_progress_bar(pct)}]` {pct}%\n"
+                f"   • {d.get('used_gb', 0)} GB de {d.get('total_gb', 0)} GB ({d.get('free_gb', 0)} GB livres)"
+            )
+        disks_fmt = "\n".join(disk_blocks) if disk_blocks else "💿 **Armazenamento:** Sem partições detectadas"
 
         text = (
             "📊 **Status Detalhado da Infraestrutura**\n\n"
@@ -502,8 +578,7 @@ class TelegramAegisBot:
             f"   • {cpu['cores']} vCPUs • Load Average: {cpu['load_avg'][0]}, {cpu['load_avg'][1]}, {cpu['load_avg'][2]}\n\n"
             f"💾 **Memória RAM:** `[{make_progress_bar(mem['percent'])}]` {mem['percent']}%\n"
             f"   • Alocada: {mem['used_gb']} GB de {mem['total_gb']} GB ({mem['free_gb']} GB livres)\n\n"
-            f"💿 **Armazenamento:** `[{make_progress_bar(main_disk.get('percent', 0))}]` {main_disk.get('percent')}%\n"
-            f"   • {main_disk.get('used_gb')} GB de {main_disk.get('total_gb')} GB NVMe SSD\n\n"
+            f"{disks_fmt}\n\n"
             f"🌐 **Rede I/O:** ↑ {overview['network']['kb_sent_per_sec']} KB/s | ↓ {overview['network']['kb_recv_per_sec']} KB/s\n"
         )
 
@@ -511,9 +586,12 @@ class TelegramAegisBot:
             "inline_keyboard": [
                 [
                     {"text": "📈 Ver Gráfico (PNG)", "callback_data": "chart_cpu_ram"},
-                    {"text": "🔄 Atualizar", "callback_data": "menu_status"}
+                    {"text": "💿 Ver Discos (PNG)", "callback_data": "chart_disks"}
                 ],
-                [{"text": "⬅️ Voltar ao Menu", "callback_data": "menu_main"}]
+                [
+                    {"text": "🔄 Atualizar", "callback_data": "menu_status"},
+                    {"text": "⬅️ Voltar ao Menu", "callback_data": "menu_main"}
+                ]
             ]
         }
 
@@ -670,6 +748,16 @@ class TelegramAegisBot:
         if overview["memory"]["percent"] > 85:
             score -= 20
             issues.append("⚠️ Memória RAM crítica (>85%)")
+
+        for d in overview.get("disks", []):
+            m = d.get("mountpoint") or d.get("device") or "/"
+            pct = d.get("percent", 0.0)
+            if pct > settings.ALERT_DISK_THRESHOLD:
+                score -= 25
+                issues.append(f"⚠️ Espaço em disco crítico em `{m}` ({pct}% ocupado)")
+            elif pct > 80:
+                score -= 10
+                issues.append(f"⚠️ Atenção em disco `{m}` ({pct}% ocupado)")
 
         for c in containers:
             if c.get("health") == "warning":

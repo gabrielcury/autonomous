@@ -256,4 +256,81 @@ class SREChartGenerator:
         buf.seek(0)
         return buf.getvalue()
 
+    def generate_disk_usage_chart(self, disks: List[Dict[str, Any]] = None) -> bytes:
+        """Generates a high-resolution 720px horizontal bar chart for all disk partitions."""
+        if not HAS_PIL:
+            return b""
+        if not disks:
+            disks = []
+
+        width = 720
+        row_height = 68
+        height = max(380, 110 + len(disks) * row_height + 50)
+        img = Image.new("RGB", (width, height), color=self.bg_color)
+        draw = ImageDraw.Draw(img)
+
+        # Outer rounded border
+        draw.rounded_rectangle([15, 15, width - 15, height - 15], radius=12, fill=self.card_bg, outline=self.border_color, width=1)
+
+        # Header Title
+        draw.text((35, 30), "OCUPAÇÃO DE ARMAZENAMENTO & DISCOS (NVMe / SSD)", fill=self.text_primary)
+        total_used = sum(d.get("used_gb", 0.0) for d in disks)
+        total_cap = sum(d.get("total_gb", 0.0) for d in disks)
+        overall_pct = round((total_used / total_cap * 100.0), 1) if total_cap > 0 else 0.0
+        draw.text((35, 52), f"Total no Host: {total_used:.1f} GB usados de {total_cap:.1f} GB ({overall_pct}%) • {len(disks)} partição(ões)", fill=self.text_muted)
+
+        # Partition Bars
+        start_y = 95
+        max_bar_w = width - 260
+
+        for idx, d in enumerate(disks):
+            y = start_y + idx * row_height
+            mount = d.get("mountpoint") or d.get("device") or "/"
+            pct = float(d.get("percent", 0.0))
+            used = float(d.get("used_gb", 0.0))
+            tot = float(d.get("total_gb", 0.0))
+            free = float(d.get("free_gb", 0.0))
+            fstype = d.get("fstype", "ext4")
+
+            # Color logic
+            if pct >= 88.0:
+                bar_color = (230, 73, 73)      # Red critical
+            elif pct >= 75.0:
+                bar_color = self.orange        # Orange warning
+            else:
+                bar_color = self.green         # Green nominal
+
+            # Labels
+            draw.text((35, y), f"{mount} ({fstype})", fill=self.text_primary)
+            draw.text((35, y + 20), f"{used:.1f} GB / {tot:.1f} GB ({free:.1f} GB livres)", fill=self.text_muted)
+
+            # Progress Bar Background
+            bx1 = 200
+            by1 = y + 6
+            bx2 = bx1 + max_bar_w
+            by2 = by1 + 18
+            draw.rounded_rectangle([bx1, by1, bx2, by2], radius=6, fill=self.grid_color)
+
+            # Progress Bar Fill
+            fill_w = max(int((pct / 100.0) * max_bar_w), 4)
+            draw.rounded_rectangle([bx1, by1, bx1 + fill_w, by2], radius=6, fill=bar_color)
+
+            # Percentage Value
+            draw.text((bx2 + 15, y + 6), f"{pct}%", fill=bar_color)
+
+        # Footer recommendation
+        footer_y = height - 42
+        has_warning = any(d.get("percent", 0.0) >= 85.0 for d in disks)
+        if has_warning:
+            status_txt = "⚠️ Atenção SRE: Partições próximas ao limite. Recomendado executar /clean para liberar cache."
+            draw.text((35, footer_y), status_txt, fill=self.orange)
+        else:
+            status_txt = "✅ Todos os discos e volumes operando dentro dos parâmetros de estabilidade nominal."
+            draw.text((35, footer_y), status_txt, fill=self.green)
+
+        buf = io.BytesIO()
+        img.save(buf, format="PNG")
+        buf.seek(0)
+        return buf.getvalue()
+
 sre_chart_generator = SREChartGenerator()

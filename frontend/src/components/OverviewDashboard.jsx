@@ -40,7 +40,11 @@ export default function OverviewDashboard({
   const host = statusData?.host || {};
   const cpu = host.cpu || { overall_percent: 12.4, cores: 8, load_avg: [0.65, 0.58, 0.51] };
   const mem = host.memory || { used_gb: 7.2, total_gb: 16.0, percent: 45.0, free_gb: 8.8, swap_used_gb: 0.5 };
-  const disk = host.disks?.[0] || { used_gb: 42.5, total_gb: 250.0, percent: 17.0, mountpoint: '/' };
+  const disksList = host.disks || [];
+  const primaryDisk = disksList[0] || { used_gb: 42.5, total_gb: 250.0, percent: 17.0, mountpoint: '/' };
+  const totalDiskUsed = disksList.reduce((acc, d) => acc + (d.used_gb || 0), 0) || primaryDisk.used_gb;
+  const totalDiskCap = disksList.reduce((acc, d) => acc + (d.total_gb || 0), 0) || primaryDisk.total_gb;
+  const overallDiskPct = totalDiskCap > 0 ? Math.round((totalDiskUsed / totalDiskCap) * 100) : primaryDisk.percent;
   const net = host.network || { kb_sent_per_sec: 128.4, kb_recv_per_sec: 342.1 };
 
   const filteredContainers = (containers || []).filter(c => {
@@ -175,10 +179,10 @@ export default function OverviewDashboard({
         <div className="stat-widget">
           <div className="stat-widget-header">
             <div>
-              <div className="stat-widget-title">Armazenamento NVMe</div>
-              <div className="stat-widget-value">{disk.percent}%</div>
+              <div className="stat-widget-title">Armazenamento em Disco</div>
+              <div className="stat-widget-value">{overallDiskPct}%</div>
             </div>
-            <div className="avatar-icon bg-warning-lt">
+            <div className={`avatar-icon ${overallDiskPct > 85 ? 'bg-danger-lt' : overallDiskPct > 75 ? 'bg-warning-lt' : 'bg-primary-lt'}`}>
               <HardDrive size={20} />
             </div>
           </div>
@@ -186,12 +190,17 @@ export default function OverviewDashboard({
             <div className="stat-progress">
               <div 
                 className="stat-progress-bar" 
-                style={{ width: `${Math.min(disk.percent, 100)}%`, backgroundColor: 'var(--tblr-warning)' }} 
+                style={{ 
+                  width: `${Math.min(overallDiskPct, 100)}%`, 
+                  backgroundColor: overallDiskPct > 85 ? 'var(--tblr-danger)' : overallDiskPct > 75 ? 'var(--tblr-warning)' : 'var(--tblr-primary)' 
+                }} 
               />
             </div>
             <div className="stat-widget-footer">
-              <span>{disk.used_gb} / {disk.total_gb} GB</span>
-              <span>{Math.round(disk.total_gb - disk.used_gb)} GB livres</span>
+              <span>{totalDiskUsed.toFixed(1)} / {totalDiskCap.toFixed(1)} GB</span>
+              <span style={{ color: overallDiskPct > 85 ? 'var(--tblr-danger)' : 'var(--tblr-muted)' }}>
+                {Math.max(0, Math.round(totalDiskCap - totalDiskUsed))} GB livres ({disksList.length || 1} partição{disksList.length > 1 ? 'ões' : ''})
+              </span>
             </div>
           </div>
         </div>
@@ -573,6 +582,12 @@ export default function OverviewDashboard({
                   <tr>
                     <td style={{ color: 'var(--tblr-muted)' }}>Tempo de Atividade</td>
                     <td style={{ fontFamily: 'var(--font-mono)' }}>{host.os?.uptime_human || '14d 6h 32m'}</td>
+                  </tr>
+                  <tr>
+                    <td style={{ color: 'var(--tblr-muted)' }}>Armazenamento</td>
+                    <td style={{ fontFamily: 'var(--font-mono)' }}>
+                      {disksList.map(d => `${d.mountpoint || d.device} (${d.percent}%)`).join(' • ') || `${overallDiskPct}% (${totalDiskCap.toFixed(0)} GB)`}
+                    </td>
                   </tr>
                   <tr>
                     <td style={{ color: 'var(--tblr-muted)' }}>Rede de Entrada</td>

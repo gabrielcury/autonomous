@@ -9,6 +9,7 @@ export default function SettingsModal({ isOpen, onClose, onSettingsUpdated }) {
   const [autoMonitor, setAutoMonitor] = useState(false);
   const [cpuThreshold, setCpuThreshold] = useState(85);
   const [memThreshold, setMemThreshold] = useState(85);
+  const [diskThreshold, setDiskThreshold] = useState(90);
   
   const [loading, setLoading] = useState(false);
   const [savedSuccess, setSavedSuccess] = useState(false);
@@ -21,6 +22,7 @@ export default function SettingsModal({ isOpen, onClose, onSettingsUpdated }) {
         setAutoMonitor(cfg.auto_monitor_enabled ?? false);
         setCpuThreshold(cfg.alert_cpu_threshold ?? 85);
         setMemThreshold(cfg.alert_mem_threshold ?? 85);
+        setDiskThreshold(cfg.alert_disk_threshold ?? 90);
         setAllowedUsers(cfg.telegram_allowed_users ?? '');
       });
       setSavedSuccess(false);
@@ -35,6 +37,7 @@ export default function SettingsModal({ isOpen, onClose, onSettingsUpdated }) {
         auto_monitor_enabled: autoMonitor,
         alert_cpu_threshold: parseFloat(cpuThreshold),
         alert_mem_threshold: parseFloat(memThreshold),
+        alert_disk_threshold: parseFloat(diskThreshold),
         telegram_allowed_users: allowedUsers
       };
 
@@ -174,7 +177,7 @@ export default function SettingsModal({ isOpen, onClose, onSettingsUpdated }) {
               <label style={{ fontWeight: '600', fontSize: '0.82rem', color: 'var(--tblr-body-color)', display: 'block', marginBottom: '8px' }}>
                 Limites de Alerta do Watchdog SRE (%)
               </label>
-              <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: '10px' }}>
+              <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr 1fr', gap: '10px' }}>
                 <div>
                   <span style={{ fontSize: '0.72rem', color: 'var(--tblr-muted)' }}>Alerta de CPU (%)</span>
                   <input
@@ -188,13 +191,25 @@ export default function SettingsModal({ isOpen, onClose, onSettingsUpdated }) {
                   />
                 </div>
                 <div>
-                  <span style={{ fontSize: '0.72rem', color: 'var(--tblr-muted)' }}>Alerta de Memória RAM (%)</span>
+                  <span style={{ fontSize: '0.72rem', color: 'var(--tblr-muted)' }}>Alerta de RAM (%)</span>
                   <input
                     type="number"
                     min="10"
                     max="100"
                     value={memThreshold}
                     onChange={(e) => setMemThreshold(e.target.value)}
+                    className="form-control"
+                    style={{ marginTop: '2px', fontSize: '0.8rem' }}
+                  />
+                </div>
+                <div>
+                  <span style={{ fontSize: '0.72rem', color: 'var(--tblr-muted)' }}>Alerta de Disco (%)</span>
+                  <input
+                    type="number"
+                    min="10"
+                    max="100"
+                    value={diskThreshold}
+                    onChange={(e) => setDiskThreshold(e.target.value)}
                     className="form-control"
                     style={{ marginTop: '2px', fontSize: '0.8rem' }}
                   />
