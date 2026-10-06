@@ -1,12 +1,10 @@
-version: "3.8"
-
 services:
-  aegis-sre-agent:
+  aegis-sre:
     build:
       context: .
       dockerfile: Dockerfile
     image: aegis-sre:latest
-    container_name: aegis-sre-agent
+    container_name: aegis-sre
     restart: unless-stopped
     ports:
       - "${PORT:-8000}:8000"
@@ -32,6 +30,11 @@ services:
       - MONITOR_INTERVAL_SECONDS=${MONITOR_INTERVAL_SECONDS:-30}
       - ALERT_CPU_THRESHOLD=${ALERT_CPU_THRESHOLD:-85.0}
       - ALERT_MEM_THRESHOLD=${ALERT_MEM_THRESHOLD:-85.0}
+    networks:
+      default:
+        aliases:
+          - aegis-sre
+          - aegis-sre-agent
     healthcheck:
       test: ["CMD", "curl", "-f", "http://localhost:8000/api/status"]
       interval: 30s
