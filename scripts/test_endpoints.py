@@ -8,6 +8,12 @@ from backend.main import app
 def run_tests():
     client = TestClient(app)
     
+    # 0. Fast Healthcheck
+    r0 = client.get('/health')
+    print('0. GET /health -> Status:', r0.status_code, 'Body:', r0.json())
+    assert r0.status_code == 200
+    assert r0.json().get('status') == 'ok'
+
     # 1. Status
     r1 = client.get('/api/status')
     print('1. GET /api/status -> Status:', r1.status_code, 'Health score:', r1.json().get('health_score'))

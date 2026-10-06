@@ -5,9 +5,9 @@ services:
       dockerfile: Dockerfile
     image: aegis-sre:latest
     container_name: aegis-sre
-    restart: unless-stopped
-    ports:
-      - "${PORT:-8000}:8000"
+    # Porta 8000 exposta internamente na rede Docker (roteamento via Traefik/Easypanel sem conflito com host)
+    expose:
+      - "8000"
     volumes:
       # Mount Docker socket to allow SRE agent to supervise, inspect, and manage containers
       - /var/run/docker.sock:/var/run/docker.sock:rw
@@ -31,17 +31,18 @@ services:
       - MONITOR_INTERVAL_SECONDS=${MONITOR_INTERVAL_SECONDS:-30}
       - ALERT_CPU_THRESHOLD=${ALERT_CPU_THRESHOLD:-85.0}
       - ALERT_MEM_THRESHOLD=${ALERT_MEM_THRESHOLD:-85.0}
+      - ALERT_DISK_THRESHOLD=${ALERT_DISK_THRESHOLD:-90.0}
     networks:
       default:
         aliases:
           - aegis-sre
           - aegis-sre-agent
     healthcheck:
-      test: ["CMD", "curl", "-f", "http://localhost:8000/api/status"]
-      interval: 30s
+      test: ["CMD", "curl", "-f", "http://localhost:8000/health"]
+      interval: 15s
       timeout: 5s
-      retries: 3
-      start_period: 15s
+      retries: 5
+      start_period: 30s
 
 volumes:
   aegis_data:

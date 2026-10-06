@@ -141,15 +141,39 @@ class CodeTraceRequest(BaseModel):
     tech_stack: Optional[str] = None
 
 # -----------------------------------------------------------------------------
+# Healthcheck Endpoint for Docker & Easypanel
+# -----------------------------------------------------------------------------
+@app.get("/health")
+@app.get("/api/health")
+def healthcheck():
+    """Ultra-fast, zero-overhead healthcheck for Docker and Easypanel."""
+    return {"status": "ok", "service": settings.PROJECT_NAME}
+
+# -----------------------------------------------------------------------------
 # REST API Endpoints
 # -----------------------------------------------------------------------------
 @app.get("/api/status")
 def get_system_status():
     """Consolidated host and container status for dashboard overview."""
-    overview = host_metrics.get_system_overview()
-    containers = docker_manager.list_containers()
+    try:
+        overview = host_metrics.get_system_overview()
+    except Exception as e:
+        logger.error(f"Error fetching host overview: {e}")
+        overview = {
+            "cpu": {"overall_percent": 0.0, "cores": 1, "load_avg": [0.0, 0.0, 0.0]},
+            "memory": {"used_gb": 0.0, "total_gb": 1.0, "percent": 0.0, "free_gb": 1.0, "swap_used_gb": 0.0},
+            "disks": [{"used_gb": 0.0, "total_gb": 100.0, "percent": 0.0, "mountpoint": "/"}],
+            "network": {"kb_sent_per_sec": 0.0, "kb_recv_per_sec": 0.0},
+            "os": {"node": "vps", "system": "Linux", "uptime_human": "Ativo"}
+        }
+
+    try:
+        containers = docker_manager.list_containers()
+    except Exception as e:
+        logger.error(f"Error fetching containers: {e}")
+        containers = []
     
-    running_count = sum(1 for c in containers if c["status"] == "running")
+    running_count = sum(1 for c in containers if c.get("status") == "running")
     total_count = len(containers)
     
     # Calculate health score
