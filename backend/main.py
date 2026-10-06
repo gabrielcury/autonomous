@@ -37,8 +37,12 @@ sre_activity_log: List[Dict[str, Any]] = [
     }
 ]
 
+# Alert broadcast cooldown tracker: category -> timestamp of last sent alert
+_last_broadcast_times: Dict[str, float] = {}
+ALERT_BROADCAST_COOLDOWN: float = 1800.0  # 30 minutos de intervalo mínimo entre alertas repetidos
+
 async def autonomous_monitor_worker():
-    """Background SRE watchdog monitoring resources and container health."""
+    """Background SRE watchdog monitoring resources."""
     logger.info("Autonomous SRE watchdog loop started.")
     while True:
         try:
@@ -46,24 +50,21 @@ async def autonomous_monitor_worker():
                 overview = host_metrics.get_system_overview()
                 cpu_p = overview["cpu"]["overall_percent"]
                 mem_p = overview["memory"]["percent"]
+                now = time.time()
 
                 if cpu_p > settings.ALERT_CPU_THRESHOLD:
                     msg = f"Uso de CPU atingiu {cpu_p}% (Limite: {settings.ALERT_CPU_THRESHOLD}%)"
-                    sre_activity_log.append({"timestamp": time.time(), "type": "ALERT", "category": "HIGH_CPU", "message": msg})
-                    await telegram_bot.send_broadcast_alert("Alerta de CPU Elevada", msg, severity="WARNING")
+                    sre_activity_log.append({"timestamp": now, "type": "ALERT", "category": "HIGH_CPU", "message": msg})
+                    if now - _last_broadcast_times.get("HIGH_CPU", 0.0) >= ALERT_BROADCAST_COOLDOWN:
+                        _last_broadcast_times["HIGH_CPU"] = now
+                        await telegram_bot.send_broadcast_alert("Alerta de CPU Elevada", msg, severity="WARNING")
 
                 if mem_p > settings.ALERT_MEM_THRESHOLD:
                     msg = f"Uso de RAM atingiu {mem_p}% (Limite: {settings.ALERT_MEM_THRESHOLD}%)"
-                    sre_activity_log.append({"timestamp": time.time(), "type": "ALERT", "category": "HIGH_MEM", "message": msg})
-                    await telegram_bot.send_broadcast_alert("Alerta de Memória Crítica", msg, severity="CRITICAL")
-
-                # Check container health & code logs
-                containers = docker_manager.list_containers()
-                for c in containers:
-                    if c["status"] not in ("running", "restarting"):
-                        msg = f"Container '{c['name']}' com status anômalo: {c['status']}"
-                        sre_activity_log.append({"timestamp": time.time(), "type": "ALERT", "category": "CONTAINER_DOWN", "message": msg})
-                        await telegram_bot.send_broadcast_alert("Container Parado", msg, severity="CRITICAL")
+                    sre_activity_log.append({"timestamp": now, "type": "ALERT", "category": "HIGH_MEM", "message": msg})
+                    if now - _last_broadcast_times.get("HIGH_MEM", 0.0) >= ALERT_BROADCAST_COOLDOWN:
+                        _last_broadcast_times["HIGH_MEM"] = now
+                        await telegram_bot.send_broadcast_alert("Alerta de Memória Crítica", msg, severity="CRITICAL")
 
             # Prune old logs
             if len(sre_activity_log) > 200:
