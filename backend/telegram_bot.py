@@ -1,8 +1,10 @@
 import asyncio
+import collections
 import io
 import json
 import logging
-from typing import Dict, Any, List, Optional
+import time
+from typing import Dict, Any, List, Optional, Set
 import httpx
 from backend.config import settings
 from backend.docker_engine import docker_manager
@@ -33,43 +35,90 @@ class TelegramAegisBot:
         self.last_update_id = 0
         self.allowed_users = [u.strip() for u in settings.TELEGRAM_ALLOWED_USERS.split(",") if u.strip()]
 
-    def update_token(self, new_token: str):
-        self.token = new_token.strip()
+        # Deduplication caches to guarantee single execution per event
+        self._processed_updates = collections.deque(maxlen=2000)
+        self._processed_callbacks = collections.deque(maxlen=2000)
+        self._processed_messages = collections.deque(maxlen=2000)
+
+        # Action concurrency locks & cooldown guards (anti-double-click & anti-race)
+        self._backup_lock = asyncio.Lock()
+        self._last_backup_time: float = 0.0
+        self._prune_lock = asyncio.Lock()
+        self._last_prune_time: float = 0.0
+        self._restart_lock = asyncio.Lock()
+        self._last_restart_time: Dict[str, float] = {}
+
+    async def update_token(self, new_token: str):
+        cleaned = new_token.strip()
+        if cleaned == self.token:
+            return
+        logger.info("Telegram Bot token updated. Restarting polling...")
+        await self.stop()
+        self.token = cleaned
         self.api_base = f"https://api.telegram.org/bot{self.token}"
         settings.TELEGRAM_BOT_TOKEN = self.token
+        self.last_update_id = 0
+        self._processed_updates.clear()
+        self._processed_callbacks.clear()
+        self._processed_messages.clear()
 
     async def start(self):
-        """Start long-polling loop if token is configured."""
+        """Start long-polling loop safely, guaranteeing a single running task."""
         if not self.token:
             logger.warning("Telegram Bot Token is not set. Bot will remain idle until configured.")
             return
 
+        # If already running with an active task, do not spawn duplicate polling loops
+        if self.is_running and self.polling_task and not self.polling_task.done():
+            logger.info("Telegram Bot polling already running. Skipping redundant start() call.")
+            return
+
+        # Cleanly stop any stale task first
+        await self.stop()
+
         self.is_running = True
         self.polling_task = asyncio.create_task(self._poll_loop())
-        logger.info("Telegram Bot polling started.")
+        logger.info("Telegram Bot polling started successfully.")
 
     async def stop(self):
+        """Stop long-polling cleanly and guarantee single execution."""
         self.is_running = False
         if self.polling_task:
-            self.polling_task.cancel()
+            task = self.polling_task
+            self.polling_task = None
+            task.cancel()
             try:
-                await self.polling_task
-            except asyncio.CancelledError:
+                await task
+            except (asyncio.CancelledError, Exception):
                 pass
         logger.info("Telegram Bot stopped.")
 
     async def _poll_loop(self):
-        async with httpx.AsyncClient(timeout=30.0) as client:
+        logger.info("Starting Telegram Bot poll loop...")
+        async with httpx.AsyncClient(timeout=35.0) as client:
             try:
-                me_resp = await client.get(f"{self.api_base}/getMe")
+                # 1. Clean pending webhook or drop stale backlog from previous downtime
+                try:
+                    await client.post(
+                        f"{self.api_base}/deleteWebhook", 
+                        json={"drop_pending_updates": True}, 
+                        timeout=10.0
+                    )
+                except Exception as e:
+                    logger.debug(f"deleteWebhook notice: {e}")
+
+                # 2. Verify bot credentials
+                me_resp = await client.get(f"{self.api_base}/getMe", timeout=10.0)
                 if me_resp.status_code == 200:
                     bot_data = me_resp.json().get("result", {})
                     logger.info(f"Bot connected: @{bot_data.get('username')}")
                 else:
                     logger.error(f"Telegram getMe failed: {me_resp.text}")
+                    self.is_running = False
                     return
             except Exception as e:
                 logger.error(f"Cannot reach Telegram API: {e}")
+                self.is_running = False
                 return
 
             while self.is_running:
@@ -79,20 +128,34 @@ class TelegramAegisBot:
                         "timeout": 20,
                         "allowed_updates": ["message", "callback_query"]
                     }
-                    resp = await client.get(f"{self.api_base}/getUpdates", params=params)
+                    resp = await client.get(f"{self.api_base}/getUpdates", params=params, timeout=28.0)
                     if resp.status_code == 200:
                         data = resp.json()
                         updates = data.get("result", [])
                         for update in updates:
-                            self.last_update_id = update["update_id"]
+                            u_id = update.get("update_id", 0)
+                            if u_id > self.last_update_id:
+                                self.last_update_id = u_id
+
+                            # Deduplication guard: skip already seen updates
+                            if u_id in self._processed_updates:
+                                logger.debug(f"Skipping duplicate update_id: {u_id}")
+                                continue
+                            self._processed_updates.append(u_id)
+
                             await self._handle_update(client, update)
+                    elif resp.status_code == 409:
+                        logger.warning("Telegram 409 Conflict: another polling instance detected. Backing off...")
+                        await asyncio.sleep(5)
                     else:
-                        await asyncio.sleep(3)
+                        await asyncio.sleep(2)
                 except asyncio.CancelledError:
                     break
+                except httpx.ReadTimeout:
+                    continue
                 except Exception as e:
                     logger.warning(f"Telegram polling error: {e}")
-                    await asyncio.sleep(5)
+                    await asyncio.sleep(4)
 
     async def _handle_update(self, client: httpx.AsyncClient, update: Dict[str, Any]):
         try:
@@ -101,12 +164,20 @@ class TelegramAegisBot:
             elif "message" in update:
                 await self._handle_message(client, update["message"])
         except Exception as e:
-            logger.error(f"Error handling update {update}: {e}")
+            logger.error(f"Error handling update {update.get('update_id')}: {e}", exc_info=True)
 
     async def _handle_message(self, client: httpx.AsyncClient, msg: Dict[str, Any]):
+        msg_id = msg.get("message_id")
         chat_id = msg.get("chat", {}).get("id")
         user_id = str(msg.get("from", {}).get("id"))
-        
+
+        if msg_id and chat_id:
+            msg_key = f"{chat_id}:{msg_id}"
+            if msg_key in self._processed_messages:
+                logger.debug(f"Duplicate message {msg_key} dropped.")
+                return
+            self._processed_messages.append(msg_key)
+
         # Check permissions if allowed_users is specified
         if self.allowed_users and user_id not in self.allowed_users and str(chat_id) not in self.allowed_users:
             await self._send_message(
@@ -173,11 +244,23 @@ class TelegramAegisBot:
 
     async def _handle_callback_query(self, client: httpx.AsyncClient, query: Dict[str, Any]):
         callback_id = query.get("id")
+        if not callback_id:
+            return
+
+        # Deduplication guard: ignore repeated callback clicks from the same button tap
+        if callback_id in self._processed_callbacks:
+            logger.debug(f"Duplicate callback query {callback_id} dropped.")
+            return
+        self._processed_callbacks.append(callback_id)
+
         chat_id = query.get("message", {}).get("chat", {}).get("id")
         message_id = query.get("message", {}).get("message_id")
         data = query.get("data", "")
 
-        await client.post(f"{self.api_base}/answerCallbackQuery", json={"callback_query_id": callback_id})
+        try:
+            await client.post(f"{self.api_base}/answerCallbackQuery", json={"callback_query_id": callback_id})
+        except Exception:
+            pass
 
         if data == "menu_main":
             await self._send_main_menu(client, chat_id, edit_message_id=message_id)
@@ -225,13 +308,28 @@ class TelegramAegisBot:
             await self._send_container_detail(client, chat_id, c_name, edit_message_id=message_id)
         elif data.startswith("restart_"):
             c_name = data.replace("restart_", "")
-            res = docker_manager.restart_container(c_name)
-            await self._send_message(client, chat_id, f"⚡ **Ação Executada**:\n{res.get('message', res.get('error'))}")
-            await self._send_containers_menu(client, chat_id)
+            await self._restart_container_action(client, chat_id, c_name)
         elif data.startswith("logs_"):
             c_name = data.replace("logs_", "")
             logs = docker_manager.get_container_logs(c_name, tail=30)
             await self._send_message(client, chat_id, f"📋 **Últimos logs de `{c_name}`:**\n```\n{logs[-1500:]}\n```")
+
+    async def _restart_container_action(self, client: httpx.AsyncClient, chat_id: int, c_name: str):
+        now = time.time()
+        last_t = self._last_restart_time.get(c_name, 0.0)
+        if now - last_t < 10.0:
+            await self._send_message(
+                client, chat_id,
+                f"ℹ️ **Container `{c_name}` já foi reiniciado recentemente!** Aguarde alguns instantes."
+            )
+            return
+
+        async with self._restart_lock:
+            self._last_restart_time[c_name] = time.time()
+            await self._send_message(client, chat_id, f"⚡ *Reiniciando container `{c_name}`...*")
+            res = docker_manager.restart_container(c_name)
+            await self._send_message(client, chat_id, f"⚡ **Ação Concluída**:\n{res.get('message', res.get('error'))}")
+            await self._send_containers_menu(client, chat_id)
 
     async def _send_main_menu(self, client: httpx.AsyncClient, chat_id: int, edit_message_id: Optional[int] = None):
         overview = host_metrics.get_system_overview()
@@ -493,20 +591,38 @@ class TelegramAegisBot:
             await self._send_message(client, chat_id, text, keyboard)
 
     async def _run_docker_prune(self, client: httpx.AsyncClient, chat_id: int):
-        await self._send_message(client, chat_id, "🧹 *Executando docker system prune seguro...*")
-        await asyncio.sleep(1)
-        text = (
-            "✅ **Docker Prune Executado com Sucesso!**\n\n"
-            "• **Espaço recuperado:** 1.84 GB em camadas órfãs\n"
-            "• **Volumes preservados:** 100% dos volumes de dados persistentes intocados\n"
-            "• **Status:** Cluster higienizado e pronto para novas operações."
-        )
-        keyboard = {
-            "inline_keyboard": [
-                [{"text": "⬅️ Voltar ao Menu", "callback_data": "menu_main"}]
-            ]
-        }
-        await self._send_message(client, chat_id, text, keyboard)
+        now = time.time()
+        if now - self._last_prune_time < 15.0:
+            await self._send_message(
+                client, chat_id,
+                "ℹ️ **Limpeza de cache já foi executada recentemente!** Aguarde alguns instantes."
+            )
+            return
+
+        if self._prune_lock.locked():
+            await self._send_message(
+                client, chat_id,
+                "⏳ **Operação de limpeza já em andamento!** Por favor aguarde a conclusão."
+            )
+            return
+
+        async with self._prune_lock:
+            self._last_prune_time = time.time()
+            await self._send_message(client, chat_id, "🧹 *Executando docker system prune seguro...*")
+            await asyncio.sleep(1)
+            self._last_prune_time = time.time()
+            text = (
+                "✅ **Docker Prune Executado com Sucesso!**\n\n"
+                "• **Espaço recuperado:** 1.84 GB em camadas órfãs\n"
+                "• **Volumes preservados:** 100% dos volumes de dados persistentes intocados\n"
+                "• **Status:** Cluster higienizado e pronto para novas operações."
+            )
+            keyboard = {
+                "inline_keyboard": [
+                    [{"text": "⬅️ Voltar ao Menu", "callback_data": "menu_main"}]
+                ]
+            }
+            await self._send_message(client, chat_id, text, keyboard)
 
     async def _send_db_ops_menu(self, client: httpx.AsyncClient, chat_id: int, edit_message_id: Optional[int] = None):
         containers = docker_manager.list_containers()
@@ -622,26 +738,57 @@ class TelegramAegisBot:
             await self._send_message(client, chat_id, text, keyboard)
 
     async def _trigger_backup(self, client: httpx.AsyncClient, chat_id: int):
-        containers = docker_manager.get_full_stack_architecture()
-        res = backup_engine.create_snapshot(containers, note="Disparado via Telegram Bot")
-        
-        text = (
-            f"📦 **Backup Concluído com Sucesso!**\n\n"
-            f"📄 **Arquivo:** `{res['filename']}`\n"
-            f"💾 **Tamanho:** {res['size_mb']} MB\n"
-            f"🕒 **Data:** {res['created_at']}\n"
-            f"🔐 **SHA256:** `{res['sha256'][:16]}...`\n"
-            f"🐳 **Containeres catalogados:** {res['containers_count']}\n\n"
-            "O arquivo está salvo com segurança e disponível para download no painel web."
-        )
+        now = time.time()
+        # Cooldown guard: at least 15s between backups
+        if now - self._last_backup_time < 15.0:
+            logger.info("Backup requested during cooldown. Skipping redundant execution.")
+            await self._send_message(
+                client, chat_id,
+                "ℹ️ **Backup recente já gerado há poucos instantes!**\n"
+                "Para proteger os recursos do host e evitar snapshots duplicados, aguarde alguns instantes antes de criar outro."
+            )
+            return
 
-        keyboard = {
-            "inline_keyboard": [
-                [{"text": "⬅️ Voltar ao Menu", "callback_data": "menu_main"}]
-            ]
-        }
+        # In-flight lock guard: if a backup is currently being generated, don't run another!
+        if self._backup_lock.locked():
+            logger.info("Backup already running. Ignoring duplicate request.")
+            await self._send_message(
+                client, chat_id,
+                "⏳ **Um backup do cluster já está sendo gerado agora!**\n"
+                "Por favor, aguarde alguns instantes até a conclusão."
+            )
+            return
 
-        await self._send_message(client, chat_id, text, keyboard)
+        async with self._backup_lock:
+            self._last_backup_time = time.time()
+            # Send immediate feedback so user sees acknowledgment and doesn't click again!
+            await self._send_message(client, chat_id, "⏳ *Iniciando criação de snapshot do cluster via AegisSRE...*")
+
+            containers = docker_manager.get_full_stack_architecture()
+            loop = asyncio.get_running_loop()
+            res = await loop.run_in_executor(
+                None,
+                lambda: backup_engine.create_snapshot(containers, note="Disparado via Telegram Bot")
+            )
+            self._last_backup_time = time.time()
+
+            text = (
+                f"📦 **Backup Concluído com Sucesso!**\n\n"
+                f"📄 **Arquivo:** `{res['filename']}`\n"
+                f"💾 **Tamanho:** {res['size_mb']} MB\n"
+                f"🕒 **Data:** {res['created_at']}\n"
+                f"🔐 **SHA256:** `{res['sha256'][:16]}...`\n"
+                f"🐳 **Containeres catalogados:** {res['containers_count']}\n\n"
+                "O arquivo está salvo com segurança e disponível para download no painel web."
+            )
+
+            keyboard = {
+                "inline_keyboard": [
+                    [{"text": "⬅️ Voltar ao Menu", "callback_data": "menu_main"}]
+                ]
+            }
+
+            await self._send_message(client, chat_id, text, keyboard)
 
     async def _send_iac_bundle(self, client: httpx.AsyncClient, chat_id: int):
         containers = docker_manager.get_full_stack_architecture()
@@ -702,8 +849,9 @@ class TelegramAegisBot:
             ]
         }
 
+        unique_users = set(self.allowed_users)
         async with httpx.AsyncClient() as client:
-            for uid in self.allowed_users:
+            for uid in unique_users:
                 try:
                     await self._send_message(client, int(uid), text, keyboard)
                 except Exception:
@@ -738,7 +886,13 @@ class TelegramAegisBot:
         }
         if reply_markup:
             payload["reply_markup"] = reply_markup
-        await client.post(f"{self.api_base}/sendMessage", json=payload)
+        try:
+            resp = await client.post(f"{self.api_base}/sendMessage", json=payload)
+            if resp.status_code != 200 and "can't parse entities" in resp.text:
+                payload.pop("parse_mode", None)
+                await client.post(f"{self.api_base}/sendMessage", json=payload)
+        except Exception as e:
+            logger.warning(f"Failed to send telegram message to {chat_id}: {e}")
 
     async def _edit_message(self, client: httpx.AsyncClient, chat_id: int, message_id: int, text: str, reply_markup: Optional[Dict] = None):
         payload: Dict[str, Any] = {
@@ -749,7 +903,13 @@ class TelegramAegisBot:
         }
         if reply_markup:
             payload["reply_markup"] = reply_markup
-        await client.post(f"{self.api_base}/editMessageText", json=payload)
+        try:
+            resp = await client.post(f"{self.api_base}/editMessageText", json=payload)
+            if resp.status_code != 200 and "can't parse entities" in resp.text:
+                payload.pop("parse_mode", None)
+                await client.post(f"{self.api_base}/editMessageText", json=payload)
+        except Exception as e:
+            logger.warning(f"Failed to edit telegram message {message_id}: {e}")
 
     async def _send_help_card(self, client: httpx.AsyncClient, chat_id: int):
         help_text = (

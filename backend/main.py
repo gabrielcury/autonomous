@@ -419,11 +419,13 @@ async def update_settings(req: SettingsUpdateRequest):
     if req.groq_api_key is not None:
         ai_brain.update_api_key(req.groq_api_key)
     if req.telegram_bot_token is not None:
-        telegram_bot.update_token(req.telegram_bot_token)
-        if req.telegram_bot_token:
-            await telegram_bot.start()
-        else:
-            await telegram_bot.stop()
+        token_to_set = req.telegram_bot_token.strip()
+        if token_to_set != telegram_bot.token:
+            await telegram_bot.update_token(token_to_set)
+            if token_to_set:
+                await telegram_bot.start()
+            else:
+                await telegram_bot.stop()
     if req.telegram_allowed_users is not None:
         settings.TELEGRAM_ALLOWED_USERS = req.telegram_allowed_users
         telegram_bot.allowed_users = [u.strip() for u in req.telegram_allowed_users.split(",") if u.strip()]
