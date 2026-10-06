@@ -4,6 +4,7 @@ import logging
 from concurrent.futures import ThreadPoolExecutor, as_completed
 from typing import List, Dict, Any, Optional, Tuple
 from datetime import datetime, timezone
+from backend.config import settings
 
 logger = logging.getLogger("docker_engine")
 
@@ -98,8 +99,23 @@ class DockerManager:
             except Exception:
                 pass
 
-            # Method 2: unix socket URL directly
-            for sock in ["unix://var/run/docker.sock", "unix:///var/run/docker.sock"]:
+            # Method 2: Comprehensive candidate socket list
+            candidates = [
+                self.socket_url,
+                getattr(settings, "DOCKER_SOCKET", None),
+                "unix:///var/run/docker.sock",
+                "unix://var/run/docker.sock",
+                "unix:///run/docker.sock",
+                "unix://run/docker.sock",
+            ]
+            if os.name == "nt":
+                candidates.extend(["npipe:////./pipe/docker_engine", "tcp://127.0.0.1:2375", "tcp://localhost:2375"])
+
+            seen = set()
+            for sock in candidates:
+                if not sock or sock in seen:
+                    continue
+                seen.add(sock)
                 try:
                     c = docker.DockerClient(base_url=sock, timeout=4)
                     c.ping()
@@ -112,6 +128,9 @@ class DockerManager:
 
         except Exception as e:
             logger.warning(f"Docker connection initialization error: {e}")
+
+        if not os.path.exists("/var/run/docker.sock") and os.name != "nt":
+            logger.warning("[AegisSRE Notice]: /var/run/docker.sock não encontrado. No Easypanel, monte o Host Path '/var/run/docker.sock' -> '/var/run/docker.sock' na aba Mounts para listar os containeres.")
 
         self.is_connected = False
         return False

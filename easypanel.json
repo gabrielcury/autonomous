@@ -21,14 +21,9 @@
         },
         "ports": [
           {
+            "published": 8000,
             "target": 8000,
             "protocol": "tcp"
-          }
-        ],
-        "domains": [
-          {
-            "host": "$(PRIMARY_DOMAIN)",
-            "port": 8000
           }
         ],
         "mounts": [

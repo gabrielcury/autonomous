@@ -266,6 +266,24 @@ export default function ContainerGrid({
                   </tr>
                 );
               })}
+              {filtered.length === 0 && (
+                <tr>
+                  <td colSpan="7" style={{ padding: '40px 20px', textAlign: 'center' }}>
+                    <div style={{ color: 'var(--tblr-warning)', display: 'flex', alignItems: 'center', justifyContent: 'center', gap: '8px', marginBottom: '8px', fontWeight: '600' }}>
+                      <AlertTriangle size={18} />
+                      <span>Nenhum container catalogado via Docker Socket</span>
+                    </div>
+                    <div style={{ fontSize: '0.82rem', color: 'var(--tblr-muted)', maxWidth: '540px', margin: '0 auto', lineHeight: '1.6' }}>
+                      Para que o agente consiga listar e operar os containeres da sua VPS, adicione o <strong>Bind Mount</strong> do Docker Socket na aba <strong>Mounts (Volumes)</strong> do seu serviço no Easypanel:
+                      <div style={{ margin: '10px 0', padding: '10px 14px', background: 'var(--tblr-table-head-bg)', borderRadius: '6px', fontFamily: 'var(--font-mono)', fontSize: '0.8rem', display: 'inline-block' }}>
+                        Host Path: <code>/var/run/docker.sock</code> &rarr; Mount Path: <code>/var/run/docker.sock</code>
+                      </div>
+                      <br />
+                      Em seguida, salve e faça o <strong>Deploy</strong> para reconectar.
+                    </div>
+                  </td>
+                </tr>
+              )}
             </tbody>
           </table>
         </div>

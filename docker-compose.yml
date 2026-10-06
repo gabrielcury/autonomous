@@ -6,10 +6,8 @@ services:
     image: aegis-sre:latest
     container_name: aegis-sre
     restart: unless-stopped
-    # Porta 8000 exposta apenas internamente na rede do Docker (sem bind no host)
-    # O roteamento e SSL são feitos pelo Traefik/Easypanel na aba Domínio sem conflitos.
-    expose:
-      - "8000"
+    ports:
+      - "${PORT:-8000}:8000"
     volumes:
       # Mount Docker socket to allow SRE agent to supervise, inspect, and manage containers
       - /var/run/docker.sock:/var/run/docker.sock:rw
@@ -33,7 +31,6 @@ services:
       - MONITOR_INTERVAL_SECONDS=${MONITOR_INTERVAL_SECONDS:-30}
       - ALERT_CPU_THRESHOLD=${ALERT_CPU_THRESHOLD:-85.0}
       - ALERT_MEM_THRESHOLD=${ALERT_MEM_THRESHOLD:-85.0}
-      - ALERT_DISK_THRESHOLD=${ALERT_DISK_THRESHOLD:-90.0}
     networks:
       default:
         aliases:

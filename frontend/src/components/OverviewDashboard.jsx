@@ -342,13 +342,30 @@ export default function OverviewDashboard({
                       </tr>
                     );
                   })}
+                  {filteredContainers.length === 0 && (
+                    <tr>
+                      <td colSpan="5" style={{ padding: '32px 20px', textAlign: 'center' }}>
+                        <div style={{ color: 'var(--tblr-warning)', display: 'flex', alignItems: 'center', justifyContent: 'center', gap: '8px', marginBottom: '8px', fontWeight: '600' }}>
+                          <AlertTriangle size={18} />
+                          <span>Docker Socket (/var/run/docker.sock) não conectado</span>
+                        </div>
+                        <div style={{ fontSize: '0.8rem', color: 'var(--tblr-muted)', maxWidth: '520px', margin: '0 auto', lineHeight: '1.6' }}>
+                          Para listar e gerenciar todos os containeres da sua VPS, adicione o <strong>Bind Mount</strong> na aba <strong>Mounts (Volumes)</strong> do serviço no Easypanel:
+                          <div style={{ margin: '8px 0', padding: '8px 12px', background: 'var(--tblr-table-head-bg)', borderRadius: '6px', fontFamily: 'var(--font-mono)', fontSize: '0.78rem' }}>
+                            Host Path: <code>/var/run/docker.sock</code> &rarr; Mount Path: <code>/var/run/docker.sock</code>
+                          </div>
+                          Depois clique em <strong>Salvar</strong> e <strong>Deploy</strong>.
+                        </div>
+                      </td>
+                    </tr>
+                  )}
                 </tbody>
               </table>
             </div>
 
             <div className="card-footer">
               <span style={{ fontSize: '0.78rem', color: 'var(--tblr-muted)' }}>
-                Exibindo {filteredContainers.length} de {containers?.length || 6} containeres conectados via Docker Socket
+                Exibindo {filteredContainers.length} de {containers?.length || 0} containeres conectados via Docker Socket
               </span>
               <button 
                 onClick={() => onNavigateTab('containers')} 
