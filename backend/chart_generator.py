@@ -131,20 +131,13 @@ class SREChartGenerator:
         return buf.getvalue()
 
     def generate_container_memory_bars(self, containers: List[Dict[str, Any]] = None) -> bytes:
-        """Generates a 720x420px horizontal bar chart comparing container memory allocations."""
+        """Generates a 720x420px horizontal bar chart comparing real container memory allocations."""
         if not HAS_PIL:
             return b""
         if not containers:
-            containers = [
-                {"name": "php-ecommerce-api", "memory_mb": 420.0, "status": "warning"},
-                {"name": "postgres-production", "memory_mb": 380.0, "status": "healthy"},
-                {"name": "python-ai-worker", "memory_mb": 290.4, "status": "healthy"},
-                {"name": "easypanel-core", "memory_mb": 142.5, "status": "healthy"},
-                {"name": "traefik-proxy", "memory_mb": 68.0, "status": "healthy"},
-                {"name": "redis-cache", "memory_mb": 52.0, "status": "healthy"},
-            ]
+            containers = []
 
-        width, height = 720, 420
+        width, height = 720, max(420, 110 + max(len(containers[:8]), 1) * 46 + 40)
         img = Image.new("RGB", (width, height), color=self.bg_color)
         draw = ImageDraw.Draw(img)
 
@@ -153,22 +146,30 @@ class SREChartGenerator:
 
         # Header Title
         draw.text((35, 30), "DISTRIBUIÇÃO DE MEMÓRIA RAM POR CONTAINER (MB)", fill=self.text_primary)
-        total_mb = sum(c.get("memory_mb", 0) for c in containers)
-        draw.text((35, 52), f"Total Alocado no Cluster: {total_mb:.1f} MB • Limite de Alerta: 400 MB", fill=self.text_muted)
+        total_mb = sum(c.get("memory_mb", 0.0) for c in containers)
+        draw.text((35, 52), f"Total Alocado no Cluster: {total_mb:.1f} MB • {len(containers)} container(es) monitorados em tempo real", fill=self.text_muted)
 
-        max_mb = 500.0
+        if not containers:
+            draw.text((35, 120), "Nenhum container ativo detectado no momento via Docker Socket.", fill=self.text_muted)
+            draw.text((35, 150), "Inicie serviços no Easypanel para visualizar os dados em tempo real.", fill=self.text_muted)
+            buf = io.BytesIO()
+            img.save(buf, format="PNG")
+            buf.seek(0)
+            return buf.getvalue()
+
+        max_mb = max([c.get("memory_mb", 0.0) for c in containers] + [100.0]) * 1.15
         start_y = 90
         row_height = 46
         bar_x1 = 220
         bar_max_w = width - bar_x1 - 100
 
-        for i, c in enumerate(containers[:6]):
+        for i, c in enumerate(containers[:8]):
             y = start_y + i * row_height
             name = c.get("name", f"container-{i}")
-            mem = float(c.get("memory_mb", 64.0))
-            is_warning = mem > 400.0 or c.get("status") == "warning"
+            mem = float(c.get("memory_mb", 0.0))
+            is_warning = mem > 400.0 or c.get("health") == "warning"
 
-            bar_color = self.orange if is_warning else self.primary_blue if i % 2 == 0 else self.purple
+            bar_color = self.orange if is_warning else self.primary_blue if i % 2 == 0 else self.green
             bg_bar_w = bar_max_w
             curr_bar_w = int((min(mem, max_mb) / max_mb) * bar_max_w)
 
@@ -186,10 +187,10 @@ class SREChartGenerator:
             draw.text((bar_x1 + curr_bar_w + 12, y + 6), val_text, fill=bar_color if is_warning else self.text_primary)
 
             if is_warning:
-                draw.text((bar_x1 + curr_bar_w + 80, y + 6), "ALERTA SRE", fill=self.orange)
+                draw.text((bar_x1 + curr_bar_w + 80, y + 6), "ALERTA", fill=self.orange)
 
         # Footer guide
-        draw.text((35, height - 35), "Dica: Clique em '🔬 Debug PHP' no bot para inspecionar memory leaks no código.", fill=self.text_muted)
+        draw.text((35, height - 35), "Telemetria 100% em tempo real coletada via Docker Engine Socket.", fill=self.text_muted)
 
         buf = io.BytesIO()
         img.save(buf, format="PNG")

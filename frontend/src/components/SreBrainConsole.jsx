@@ -212,11 +212,11 @@ Como posso te ajudar agora? Você pode digitar, clicar nas sugestões abaixo ou 
                 📊 Status Geral
               </button>
               <button
-                onClick={() => handleSend('Por que o php-ecommerce-api está consumindo tanta memória e como otimizar?')}
+                onClick={() => handleSend('Como analisar o consumo de memória RAM dos containeres e evitar OOM Kill?')}
                 className="btn btn-secondary btn-sm"
                 style={{ fontSize: '0.72rem', whiteSpace: 'nowrap' }}
               >
-                🐘 Investigar PHP Memory Leak
+                ⚡ Otimizar Memória RAM
               </button>
               <button
                 onClick={() => handleSend('Como posso subir essa infraestrutura localmente usando o Terraform gerado?')}

@@ -133,21 +133,17 @@ Diretrizes de resposta:
 
 *(Dica: Adicione sua GROQ_API_KEY gratuita no menu de configurações para ativar o raciocínio completo com LLaMA 3.3 70B)*"""
 
-        if "php" in q or "memoria" in q or "trace" in q or "debug" in q:
-            return """🔬 **Análise de Debug de Código (PHP / Laravel / Zend)**:
-Detectamos no container `php-ecommerce-api`:
-- **Erro**: `Allowed memory size of 134217728 bytes exhausted` no arquivo `/var/www/html/app/Services/ReportExportService.php` linha 214.
-- **Causa Raiz**: O script tentou alocar um grande volume de registros de vendas de uma só vez na memória heap do PHP.
-- **Correção Recomendada**:
-```php
-// Substitua o ->get() por paginação em chunks ou cursor
-Order::query()->chunk(500, function ($orders) {
-    foreach ($orders as $order) {
-        $this->processOrder($order);
-    }
-});
-```
-- **Ajuste de Infra**: Aumentar temporariamente `memory_limit = 256M` no php.ini ou conf do PHP-FPM."""
+        if "memoria" in q or "trace" in q or "debug" in q:
+            containers = context.get("containers", [])
+            warn_c = next((c for c in containers if c.get("health") == "warning" or c.get("memory_mb", 0) > 400), None)
+            if warn_c:
+                return f"""🔬 **Análise de Recursos & Otimização SRE**:
+Container com consumo elevado: `{warn_c['name']}` ({warn_c.get('tech_stack', 'Docker Service')})
+- **Memória Alocada**: {warn_c.get('memory_mb', 0)} MB
+- **Recomendação SRE**: Inspecionar logs recentes ou reiniciar o worker se houver acúmulo de cache."""
+            return f"""🔬 **Análise de Recursos & Memória**:
+Analisados {len(containers)} containeres ativos no cluster via Docker Socket.
+Todos estão operando dentro dos parâmetros de estabilidade."""
 
         if "backup" in q:
             return "📦 **Backup & Disaster Recovery**: Você pode disparar um snapshot completo via menu ou baixar os arquivos tar.gz de volumes e bancos diretamente pelo painel!"

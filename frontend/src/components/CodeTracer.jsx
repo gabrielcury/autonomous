@@ -15,11 +15,17 @@ import {
 import { api } from '../api/client';
 
 export default function CodeTracer({ containers, onConsultAiWithContext }) {
-  const [selectedContainer, setSelectedContainer] = useState(containers?.[0]?.name || 'php-ecommerce-api');
+  const [selectedContainer, setSelectedContainer] = useState(containers?.[0]?.name || '');
   const [customLogs, setCustomLogs] = useState('');
   const [loading, setLoading] = useState(false);
   const [analysisResult, setAnalysisResult] = useState(null);
   const [copiedIdx, setCopiedIdx] = useState(null);
+
+  useEffect(() => {
+    if (!selectedContainer && containers && containers.length > 0) {
+      setSelectedContainer(containers[0].name);
+    }
+  }, [containers, selectedContainer]);
 
   const runCodeTrace = async () => {
     setLoading(true);

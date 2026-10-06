@@ -351,38 +351,71 @@ export default function OverviewDashboard({
             </div>
           </div>
 
-          {/* Card: Active Code SRE Alert */}
-          <div className="card" style={{ borderLeft: '4px solid var(--tblr-warning)' }}>
-            <div className="card-header">
-              <div style={{ display: 'flex', alignItems: 'center', gap: '10px' }}>
-                <div className="avatar-icon bg-warning-lt" style={{ width: '32px', height: '32px' }}>
-                  <AlertTriangle size={16} />
+          {/* Card: Active Code SRE Alert or Healthy Status */}
+          {(() => {
+            const warningContainer = containers?.find(c => c.health === 'warning' || (c.status === 'running' && c.memory_mb > 400));
+            if (warningContainer) {
+              return (
+                <div className="card" style={{ borderLeft: '4px solid var(--tblr-warning)' }}>
+                  <div className="card-header">
+                    <div style={{ display: 'flex', alignItems: 'center', gap: '10px' }}>
+                      <div className="avatar-icon bg-warning-lt" style={{ width: '32px', height: '32px' }}>
+                        <AlertTriangle size={16} />
+                      </div>
+                      <div>
+                        <h4 className="card-title">Atenção no Container: {warningContainer.name}</h4>
+                        <div className="card-subtitle">Consumo elevado de memória: <code>{warningContainer.memory_mb} MB</code> ({warningContainer.tech_stack})</div>
+                      </div>
+                    </div>
+                    <button 
+                      onClick={() => onSelectContainer(warningContainer.name)} 
+                      className="btn btn-primary btn-sm"
+                    >
+                      <Bug size={14} />
+                      <span>Inspecionar Logs</span>
+                    </button>
+                  </div>
+                  <div className="card-body">
+                    <p style={{ fontSize: '0.84rem', color: 'var(--tblr-body-color)', lineHeight: '1.6', marginBottom: '12px' }}>
+                      O container <strong>{warningContainer.name}</strong> está consumindo <strong>{warningContainer.memory_mb} MB</strong>. O agente SRE está monitorando thresholds de saturação e anomalias.
+                    </p>
+                    <div style={{ display: 'flex', alignItems: 'center', gap: '10px' }}>
+                      <span className="badge badge-subtle-warning">Atenção SRE</span>
+                      <span style={{ fontSize: '0.78rem', color: 'var(--tblr-muted)', fontFamily: 'var(--font-mono)' }}>
+                        Status: {warningContainer.status} • Imagem: {warningContainer.image}
+                      </span>
+                    </div>
+                  </div>
                 </div>
-                <div>
-                  <h4 className="card-title">Incidente SRE Ativo: Limite de Memória PHP-FPM</h4>
-                  <div className="card-subtitle">Detectado em <code>php-ecommerce-api</code> (Zend Memory Manager)</div>
+              );
+            }
+            return (
+              <div className="card" style={{ borderLeft: '4px solid var(--tblr-success)' }}>
+                <div className="card-header">
+                  <div style={{ display: 'flex', alignItems: 'center', gap: '10px' }}>
+                    <div className="avatar-icon bg-success-lt" style={{ width: '32px', height: '32px' }}>
+                      <CheckCircle2 size={16} />
+                    </div>
+                    <div>
+                      <h4 className="card-title">Cluster Operacional & Estável</h4>
+                      <div className="card-subtitle">Todos os {containers?.length || 0} containeres operando com telemetria nominal</div>
+                    </div>
+                  </div>
+                  <button 
+                    onClick={() => onNavigateTab('containers')} 
+                    className="btn btn-secondary btn-sm"
+                  >
+                    <span>Ver Detalhes</span>
+                  </button>
+                </div>
+                <div className="card-body">
+                  <p style={{ fontSize: '0.84rem', color: 'var(--tblr-muted)', lineHeight: '1.6', marginBottom: '0' }}>
+                    Nenhum vazamento de memória ou anomalia detectada nos containeres conectados via Docker Socket. AegisSRE ativo.
+                  </p>
                 </div>
               </div>
-              <button 
-                onClick={() => onNavigateTab('debugger')} 
-                className="btn btn-primary btn-sm"
-              >
-                <Bug size={14} />
-                <span>Examinar no Debugger</span>
-              </button>
-            </div>
-            <div className="card-body">
-              <p style={{ fontSize: '0.84rem', color: 'var(--tblr-body-color)', lineHeight: '1.6', marginBottom: '12px' }}>
-                O processo worker PHP excedeu a quota de <strong>128MB</strong> na linha <strong>214</strong> de <code>ReportExportService.php</code> ao processar queries não paginadas com <code>hydrateAll()</code>. O agente SRE sugere chunking de cursor para limitar a alocação de memória para 24MB.
-              </p>
-              <div style={{ display: 'flex', alignItems: 'center', gap: '10px' }}>
-                <span className="badge badge-subtle-warning">Alta Prioridade</span>
-                <span style={{ fontSize: '0.78rem', color: 'var(--tblr-muted)', fontFamily: 'var(--font-mono)' }}>
-                  Arquivo: app/Services/ReportExportService.php:214
-                </span>
-              </div>
-            </div>
-          </div>
+            );
+          })()}
         </div>
 
         {/* Right Column: SRE Brain Watchdog, Specs & Quick Actions */}

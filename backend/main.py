@@ -30,16 +30,10 @@ logger = logging.getLogger("aegis_main")
 # SRE Autonomous Event Log
 sre_activity_log: List[Dict[str, Any]] = [
     {
-        "timestamp": time.time() - 3600,
+        "timestamp": time.time(),
         "type": "INFO",
         "category": "INITIALIZATION",
         "message": "AegisSRE Autonomous Agent inicializado no modo STANDBY (PARADO). Inicie o monitoramento pelo painel quando desejar."
-    },
-    {
-        "timestamp": time.time() - 1800,
-        "type": "WARNING",
-        "category": "CODE_TRACE",
-        "message": "Detectado estouro de memória PHP no container 'php-ecommerce-api' (ReportExportService.php:214). Sugestão de correção com LazyCollection gerada."
     }
 ]
 

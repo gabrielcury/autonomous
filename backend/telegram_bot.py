@@ -270,11 +270,11 @@ class TelegramAegisBot:
                     {"text": "🩺 Auditoria SRE", "callback_data": "menu_sre_audit"}
                 ],
                 [
-                    {"text": "🔬 Debug de Código PHP/Py", "callback_data": "menu_debug_code"},
+                    {"text": "🔬 Debug de Código", "callback_data": "menu_debug_code"},
                     {"text": "🧹 Auto-Cura & Limpeza", "callback_data": "menu_self_healing"}
                 ],
                 [
-                    {"text": "🗄️ Bancos (Postgres & Redis)", "callback_data": "menu_db_ops"},
+                    {"text": "🗄️ Bancos de Dados", "callback_data": "menu_db_ops"},
                     {"text": "📦 Criar Backup Agora", "callback_data": "menu_backup"}
                 ],
                 [
@@ -332,18 +332,42 @@ class TelegramAegisBot:
         containers = docker_manager.list_containers()
         png_bytes = sre_chart_generator.generate_container_memory_bars(containers)
 
-        caption = (
-            "📊 **Alocação de Memória RAM por Container**\n\n"
-            "• **Atenção:** `php-ecommerce-api` está alocando 420MB (> limite sugerido de 400MB).\n"
-            "• `postgres-production`: 380MB (Buffer cache estável).\n"
-            "• `python-ai-worker`: 290MB (Tarefas de inferência em fila)."
-        )
-        keyboard = {
-            "inline_keyboard": [
-                [{"text": "🔬 Inspecionar Código PHP", "callback_data": "menu_debug_code"}],
-                [{"text": "⬅️ Voltar aos Gráficos", "callback_data": "menu_charts"}]
+        if not containers:
+            caption = (
+                "📊 **Alocação de Memória RAM por Container**\n\n"
+                "ℹ️ Nenhum container ativo detectado no momento via Docker Socket."
+            )
+            keyboard = {
+                "inline_keyboard": [
+                    [{"text": "🔄 Atualizar", "callback_data": "chart_containers"}],
+                    [{"text": "⬅️ Voltar aos Gráficos", "callback_data": "menu_charts"}]
+                ]
+            }
+        else:
+            sorted_c = sorted(containers, key=lambda x: x.get("memory_mb", 0.0), reverse=True)
+            total_mb = sum(c.get("memory_mb", 0.0) for c in containers)
+            lines = [
+                "📊 **Alocação de Memória RAM por Container (Tempo Real)**\n",
+                f"💾 **Total Alocado no Cluster:** {total_mb:.1f} MB\n"
             ]
-        }
+            for c in sorted_c[:6]:
+                c_name = c["name"]
+                c_mem = c.get("memory_mb", 0.0)
+                c_status = c.get("status", "running")
+                status_icon = "🟢" if c_status == "running" else "🔴"
+                health = c.get("health", "healthy")
+                if health == "warning" or c_mem > 400.0:
+                    lines.append(f"• ⚠️ **`{c_name}`**: {c_mem:.1f} MB (Consumo elevado)")
+                else:
+                    lines.append(f"• {status_icon} **`{c_name}`**: {c_mem:.1f} MB ({c.get('tech_stack', 'Docker')})")
+
+            caption = "\n".join(lines)
+            buttons = []
+            for c in sorted_c[:3]:
+                buttons.append([{"text": f"🔍 Inspecionar {c['name'][:20]}", "callback_data": f"inspect_{c['name']}"}])
+            buttons.append([{"text": "⬅️ Voltar aos Gráficos", "callback_data": "menu_charts"}])
+            keyboard = {"inline_keyboard": buttons}
+
         await self._send_photo(client, chat_id, png_bytes, caption, keyboard)
 
     async def _send_network_chart(self, client: httpx.AsyncClient, chat_id: int):
@@ -485,20 +509,31 @@ class TelegramAegisBot:
         await self._send_message(client, chat_id, text, keyboard)
 
     async def _send_db_ops_menu(self, client: httpx.AsyncClient, chat_id: int, edit_message_id: Optional[int] = None):
-        text = (
-            "🗄️ **Telemetria de Banco de Dados & Cache In-Memory**\n\n"
-            "🐘 **PostgreSQL 16:**\n"
-            "• Conexões ativas: 14/100 (14% alocado)\n"
-            "• Cache Hit Ratio: 99.4% (Excelente)\n"
-            "• Consultas lentas (>500ms): 0 detectadas nas últimas 2h\n\n"
-            "⚡ **Redis 7.2 Cache:**\n"
-            "• Memória usada: 52 MB / 512 MB (Maxmemory LRU)\n"
-            "• Key Evictions: 0 (Sem desalocação forçada)\n"
-            "• Hit Rate: 96.8% de acerto nas requisições"
-        )
+        containers = docker_manager.list_containers()
+        db_containers = [
+            c for c in containers
+            if any(k in (c.get("image", "") + c.get("name", "")).lower() for k in ["postgres", "mysql", "mariadb", "redis", "mongo", "database", "db"])
+        ]
+
+        if db_containers:
+            lines = ["🗄️ **Bancos de Dados & Caches Detectados no Cluster:**\n"]
+            for db in db_containers:
+                st = "🟢 Ativo" if db["status"] == "running" else "🔴 Parado"
+                lines.append(
+                    f"• **{db['name']}** ({db.get('tech_stack', 'DB')}):\n"
+                    f"  Status: {st} • RAM: {db.get('memory_mb', 0):.1f} MB • Portas: {', '.join(db.get('ports', [])) or 'Interna'}"
+                )
+            text = "\n".join(lines)
+        else:
+            text = (
+                "🗄️ **Telemetria de Banco de Dados & Cache In-Memory**\n\n"
+                f"ℹ️ Nenhum container dedicado de banco (Postgres/MySQL/Redis) detectado entre os {len(containers)} containeres ativos.\n\n"
+                "Você pode inspecionar todos os containeres na opção **🐳 Containeres Docker**."
+            )
+
         keyboard = {
             "inline_keyboard": [
-                [{"text": "📦 Fazer Snapshot dos Bancos", "callback_data": "menu_backup"}],
+                [{"text": "📦 Fazer Snapshot dos Dados", "callback_data": "menu_backup"}],
                 [{"text": "⬅️ Voltar ao Menu", "callback_data": "menu_main"}]
             ]
         }
@@ -553,27 +588,33 @@ class TelegramAegisBot:
         containers = docker_manager.list_containers()
         findings = []
         for c in containers:
-            logs = docker_manager.get_container_logs(c["name"], tail=50)
-            tech = c.get("tech_stack", "php" if "php" in c["image"] else "python" if "python" in c["image"] else "general")
-            trace = code_tracer.analyze_container_code(c["name"], tech, logs)
-            if trace["findings"]:
-                for f in trace["findings"]:
-                    findings.append(f"**[{c['name']}]** {f['summary']}\n`{f['details'][:120]}`")
+            if c.get("status") == "running":
+                logs = docker_manager.get_container_logs(c["name"], tail=50)
+                tech = c.get("tech_stack", "general")
+                trace = code_tracer.analyze_container_code(c["name"], tech, logs)
+                if trace and trace.get("findings"):
+                    for f in trace["findings"]:
+                        findings.append(f"• **[{c['name']}]** {f['summary']}\n`{f['details'][:120]}`")
 
-        report = "\n\n".join(findings) if findings else "✅ Nenhum erro fatal de código (PHP/Python) detectado nos logs recentes!"
+        if findings:
+            report = "\n\n".join(findings[:4])
+            text = (
+                "🔬 **Análise de Debug & Tracing de Código**\n\n"
+                f"{report}\n\n"
+                "💡 Utilize os botões abaixo para ver os logs completos ou reiniciar o serviço."
+            )
+        else:
+            text = (
+                "🔬 **Análise de Debug & Tracing de Código**\n\n"
+                f"✅ Analisados logs de {len(containers)} container(es) ativos.\n"
+                "Nenhum erro fatal de código ou stack trace não tratado detectado nos logs recentes!"
+            )
 
-        text = (
-            "🔬 **Análise de Debug & Tracing de Código**\n\n"
-            f"{report}\n\n"
-            "💡 Você pode enviar um comando de voz perguntando: *'como corrigir o memory leak do php?'*"
-        )
-
-        keyboard = {
-            "inline_keyboard": [
-                [{"text": "⚡ Reiniciar Container PHP", "callback_data": "restart_php-ecommerce-api"}],
-                [{"text": "⬅️ Voltar ao Menu", "callback_data": "menu_main"}]
-            ]
-        }
+        buttons = []
+        for c in containers[:3]:
+            buttons.append([{"text": f"📋 Logs de {c['name'][:20]}", "callback_data": f"logs_{c['name']}"}])
+        buttons.append([{"text": "⬅️ Voltar ao Menu", "callback_data": "menu_main"}])
+        keyboard = {"inline_keyboard": buttons}
 
         if edit_message_id:
             await self._edit_message(client, chat_id, edit_message_id, text, keyboard)

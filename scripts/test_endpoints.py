@@ -24,7 +24,7 @@ def run_tests():
     assert r3.status_code == 200
 
     # 4. Code Trace
-    r4 = client.post('/api/code/trace', json={'container_name': 'php-ecommerce-api', 'tech_stack': 'php'})
+    r4 = client.post('/api/code/trace', json={'container_name': 'aegis-sre', 'tech_stack': 'python'})
     print('4. POST /api/code/trace -> Status:', r4.status_code, 'Findings:', r4.json().get('findings_count'))
     assert r4.status_code == 200
 
