@@ -134,6 +134,9 @@ class DockerManager:
         self._probed_sockets: List[Dict[str, Any]] = []
         self._stats_cache: Dict[str, Tuple[float, float, float, float]] = {}  # container_id -> (cpu_pct, mem_mb, limit_mb, timestamp)
         self._stats_ttl = 8.0  # seconds
+        self._containers_cache: List[Dict[str, Any]] = []
+        self._containers_cache_time: float = 0.0
+        self._containers_cache_ttl: float = 2.5  # seconds (prevents WebSocket & HTTP poll contention)
         self._last_init_time = 0.0
         self._init_client()
 
@@ -247,7 +250,7 @@ class DockerManager:
                 self.client = c
                 self.is_connected = True
                 self.connection_engine = "docker-py"
-                self.active_socket = "from_env (/var/run/docker.sock)"
+                self.active_socket = "/var/run/docker.sock"
                 ver = c.version()
                 self.docker_version = ver.get("Version")
                 self.api_version = ver.get("ApiVersion")
@@ -421,24 +424,44 @@ class DockerManager:
     # Container Listing (Dual-Engine: docker-py + httpx UDS)
     # -------------------------------------------------------------------------
     def list_containers(self, all: bool = True) -> List[Dict[str, Any]]:
-        """List all REAL containers with live status and 100% real metrics."""
+        """List all REAL containers with live status, cache, and zero flickering."""
+        now = time.time()
+        # Serve from memory cache if fresh (prevents Docker socket contention between WebSocket & HTTP poll)
+        if (now - self._containers_cache_time) < self._containers_cache_ttl and self._containers_cache:
+            return self._containers_cache
+
         if not self.ensure_client():
-            logger.warning("Docker daemon is not connected. Returning empty container list.")
+            if self._containers_cache:
+                return self._containers_cache
             return []
 
-        # If connected via docker-py, try docker-py list first
+        fresh_containers = None
+
+        # Method 1: docker-py list
         if self.connection_engine == "docker-py" and self.client:
             try:
-                return self._list_containers_dockerpy(all=all)
+                fresh_containers = self._list_containers_dockerpy(all=all)
             except Exception as py_err:
                 logger.warning(f"docker-py list failed ({py_err}), falling back to direct httpx UDS...")
 
-        # Direct httpx UDS fallback
-        try:
-            return self._list_containers_httpx(all=all)
-        except Exception as e:
-            logger.error(f"Error listing containers via httpx: {e}")
-            return []
+        # Method 2: direct httpx UDS fallback
+        if fresh_containers is None:
+            try:
+                fresh_containers = self._list_containers_httpx(all=all)
+            except Exception as e:
+                logger.error(f"Error listing containers via httpx: {e}")
+
+        if fresh_containers is not None and len(fresh_containers) > 0:
+            self._containers_cache = fresh_containers
+            self._containers_cache_time = now
+            return fresh_containers
+
+        # If fresh query returned empty or had a transient glitch, but we previously had valid containers:
+        # DO NOT wipe out the list!
+        if self._containers_cache:
+            return self._containers_cache
+
+        return fresh_containers or []
 
     def _list_containers_dockerpy(self, all: bool = True) -> List[Dict[str, Any]]:
         """Listing via docker-py."""
@@ -448,14 +471,17 @@ class DockerManager:
         stats_map: Dict[str, Tuple[float, float, float]] = {}
         running_containers = [c for c in containers if c.status == "running"]
         if running_containers:
-            with ThreadPoolExecutor(max_workers=min(len(running_containers), 8)) as executor:
+            with ThreadPoolExecutor(max_workers=min(len(running_containers), 6)) as executor:
                 future_to_c = {executor.submit(self._fetch_single_container_stats, c): c.id for c in running_containers}
-                for future in as_completed(future_to_c, timeout=2.5):
-                    cid = future_to_c[future]
-                    try:
-                        stats_map[cid] = future.result()
-                    except Exception:
-                        stats_map[cid] = (0.0, 0.0, 1024.0)
+                try:
+                    for future in as_completed(future_to_c, timeout=2.0):
+                        cid = future_to_c[future]
+                        try:
+                            stats_map[cid] = future.result()
+                        except Exception:
+                            stats_map[cid] = (0.0, 0.0, 1024.0)
+                except Exception as t_err:
+                    logger.debug(f"Stats fetch partial timeout: {t_err}")
 
         result = []
         for c in containers:
@@ -521,7 +547,11 @@ class DockerManager:
         sock = self.active_socket or "/var/run/docker.sock"
         if sock.startswith("tcp://") or sock.startswith("http://"):
             return httpx.Client(base_url=sock.replace("tcp://", "http://"), timeout=timeout)
-        clean_uds = sock.replace("unix://", "")
+        clean_uds = sock.replace("unix://", "").strip()
+        if "(" in clean_uds:
+            clean_uds = clean_uds.split("(")[-1].replace(")", "").strip()
+        if not clean_uds or "from_env" in clean_uds or (os.name != "nt" and not os.path.exists(clean_uds)):
+            clean_uds = "/var/run/docker.sock"
         transport = httpx.HTTPTransport(uds=clean_uds)
         return httpx.Client(transport=transport, base_url="http://docker", timeout=timeout)
 

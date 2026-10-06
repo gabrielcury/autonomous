@@ -57,7 +57,11 @@ export default function App() {
       ]);
       setStatusData(statusRes);
       if (Array.isArray(containersRes)) {
-        setContainers(containersRes);
+        setContainers(prev => {
+          if (containersRes.length > 0) return containersRes;
+          if (prev && prev.length > 0) return prev;
+          return containersRes;
+        });
       }
     } catch (err) {
       console.error('Failed to refresh data:', err);
