@@ -38,7 +38,15 @@ def run_tests():
     print('6. GET /api/backups -> Status:', r6.status_code, 'Backups list count:', len(r6.json()))
     assert r6.status_code == 200
 
-    print('\nALL 6 ENDPOINT AND FRONTEND INTEGRATION TESTS PASSED!')
+    # 7. Docker Diagnostic
+    r7 = client.get('/api/docker/diagnostic')
+    diag = r7.json()
+    print('7. GET /api/docker/diagnostic -> Status:', r7.status_code, 'Connected:', diag.get('connected'), 'Engine:', diag.get('engine'), 'Summary:', diag.get('summary'))
+    assert r7.status_code == 200
+    assert 'probed_sockets' in diag
+    assert 'summary' in diag
+
+    print('\nALL 7 ENDPOINT AND FRONTEND INTEGRATION TESTS PASSED!')
 
 if __name__ == '__main__':
     run_tests()

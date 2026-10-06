@@ -213,6 +213,8 @@ export default function App() {
               <OverviewDashboard
                 statusData={statusData}
                 containers={containers}
+                dockerDiagnostic={statusData?.containers_summary?.diagnostic}
+                onRefreshData={refreshData}
                 onSelectContainer={(name) => setSelectedContainer(name)}
                 onRestartContainer={handleRestartContainer}
                 onTraceContainer={handleTraceContainer}
@@ -227,6 +229,8 @@ export default function App() {
             {activeTab === 'containers' && (
               <ContainerGrid
                 containers={containers}
+                dockerDiagnostic={statusData?.containers_summary?.diagnostic}
+                onRefreshData={refreshData}
                 onSelectContainer={(name) => setSelectedContainer(name)}
                 onRestartContainer={handleRestartContainer}
                 onStopContainer={handleStopContainer}

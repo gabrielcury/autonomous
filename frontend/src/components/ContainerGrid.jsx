@@ -18,6 +18,8 @@ import {
 
 export default function ContainerGrid({ 
   containers, 
+  dockerDiagnostic,
+  onRefreshData,
   onSelectContainer, 
   onRestartContainer, 
   onStopContainer, 
@@ -27,6 +29,16 @@ export default function ContainerGrid({
   const [searchTerm, setSearchTerm] = useState('');
   const [statusFilter, setStatusFilter] = useState('ALL');
   const [actionLoading, setActionLoading] = useState({});
+  const [isTestingSocket, setIsTestingSocket] = useState(false);
+
+  const handleTestSocket = async () => {
+    setIsTestingSocket(true);
+    try {
+      if (onRefreshData) await onRefreshData();
+    } finally {
+      setIsTestingSocket(false);
+    }
+  };
 
   const handleAction = async (actionFn, containerName) => {
     setActionLoading(prev => ({ ...prev, [containerName]: true }));
@@ -268,19 +280,126 @@ export default function ContainerGrid({
               })}
               {filtered.length === 0 && (
                 <tr>
-                  <td colSpan="7" style={{ padding: '40px 20px', textAlign: 'center' }}>
-                    <div style={{ color: 'var(--tblr-warning)', display: 'flex', alignItems: 'center', justifyContent: 'center', gap: '8px', marginBottom: '8px', fontWeight: '600' }}>
-                      <AlertTriangle size={18} />
-                      <span>Nenhum container catalogado via Docker Socket</span>
-                    </div>
-                    <div style={{ fontSize: '0.82rem', color: 'var(--tblr-muted)', maxWidth: '540px', margin: '0 auto', lineHeight: '1.6' }}>
-                      Para que o agente consiga listar e operar os containeres da sua VPS, adicione o <strong>Bind Mount</strong> do Docker Socket na aba <strong>Mounts (Volumes)</strong> do seu serviço no Easypanel:
-                      <div style={{ margin: '10px 0', padding: '10px 14px', background: 'var(--tblr-table-head-bg)', borderRadius: '6px', fontFamily: 'var(--font-mono)', fontSize: '0.8rem', display: 'inline-block' }}>
-                        Host Path: <code>/var/run/docker.sock</code> &rarr; Mount Path: <code>/var/run/docker.sock</code>
+                  <td colSpan="7" style={{ padding: '36px 20px', textAlign: 'center' }}>
+                    {containers?.length > 0 ? (
+                      <div style={{ color: 'var(--tblr-muted)', fontSize: '0.9rem' }}>
+                        Nenhum container encontrado correspondente à busca "<strong>{searchTerm}</strong>".
                       </div>
-                      <br />
-                      Em seguida, salve e faça o <strong>Deploy</strong> para reconectar.
-                    </div>
+                    ) : (
+                      <div style={{ maxWidth: '640px', margin: '0 auto', textAlign: 'left' }}>
+                        {/* Header Box */}
+                        <div style={{ 
+                          display: 'flex', 
+                          alignItems: 'center', 
+                          gap: '12px', 
+                          padding: '14px 18px', 
+                          borderRadius: '8px', 
+                          backgroundColor: dockerDiagnostic?.probed_sockets?.some(s => s.is_directory) 
+                            ? 'rgba(239, 68, 68, 0.12)' 
+                            : 'rgba(245, 158, 11, 0.12)',
+                          border: dockerDiagnostic?.probed_sockets?.some(s => s.is_directory)
+                            ? '1px solid var(--tblr-danger)'
+                            : '1px solid var(--tblr-warning)',
+                          marginBottom: '16px'
+                        }}>
+                          <AlertTriangle 
+                            size={24} 
+                            color={dockerDiagnostic?.probed_sockets?.some(s => s.is_directory) ? 'var(--tblr-danger)' : 'var(--tblr-warning)'} 
+                            style={{ flexShrink: 0 }} 
+                          />
+                          <div style={{ flex: 1 }}>
+                            <div style={{ 
+                              fontWeight: '600', 
+                              fontSize: '0.92rem', 
+                              color: dockerDiagnostic?.probed_sockets?.some(s => s.is_directory) ? 'var(--tblr-danger)' : 'var(--tblr-warning)' 
+                            }}>
+                              {dockerDiagnostic?.probed_sockets?.some(s => s.is_directory) 
+                                ? 'Erro Crítico: /var/run/docker.sock foi montado como Diretório (Pasta)!' 
+                                : 'Docker Socket Não Conectado ou Vazio'}
+                            </div>
+                            <div style={{ fontSize: '0.8rem', color: 'var(--tblr-body-color)', marginTop: '2px', lineHeight: '1.4' }}>
+                              {dockerDiagnostic?.summary || 'O agente não conseguiu ler os containeres através do socket do Docker no host.'}
+                            </div>
+                          </div>
+                          <button
+                            onClick={handleTestSocket}
+                            disabled={isTestingSocket}
+                            className="btn btn-primary btn-sm"
+                            style={{ flexShrink: 0, display: 'flex', alignItems: 'center', gap: '6px' }}
+                          >
+                            <RotateCw size={13} className={isTestingSocket ? 'animate-spin' : ''} />
+                            <span>{isTestingSocket ? 'Testando...' : 'Reconectar'}</span>
+                          </button>
+                        </div>
+
+                        {/* Real-time Diagnostics Table */}
+                        <div style={{ 
+                          background: 'var(--tblr-card-bg)', 
+                          border: '1px solid var(--tblr-border-color)', 
+                          borderRadius: '6px', 
+                          padding: '12px 16px', 
+                          marginBottom: '16px',
+                          fontSize: '0.8rem' 
+                        }}>
+                          <div style={{ fontWeight: '600', color: 'var(--tblr-muted)', marginBottom: '8px', textTransform: 'uppercase', fontSize: '0.72rem', letterSpacing: '0.5px' }}>
+                            Diagnóstico em Tempo Real do Container:
+                          </div>
+                          <div style={{ display: 'grid', gridTemplateColumns: 'repeat(2, 1fr)', gap: '8px', fontFamily: 'var(--font-mono)' }}>
+                            <div>
+                              <span style={{ color: 'var(--tblr-muted)' }}>Caminho Testado: </span>
+                              <code>/var/run/docker.sock</code>
+                            </div>
+                            <div>
+                              <span style={{ color: 'var(--tblr-muted)' }}>Arquivo Existe no Container? </span>
+                              <strong style={{ color: dockerDiagnostic?.probed_sockets?.some(s => s.exists) ? 'var(--tblr-success)' : 'var(--tblr-danger)' }}>
+                                {dockerDiagnostic?.probed_sockets?.some(s => s.exists) ? 'SIM' : 'NÃO'}
+                              </strong>
+                            </div>
+                            <div>
+                              <span style={{ color: 'var(--tblr-muted)' }}>Tipo de Arquivo: </span>
+                              {dockerDiagnostic?.probed_sockets?.some(s => s.is_directory) ? (
+                                <span style={{ color: 'var(--tblr-danger)', fontWeight: 'bold' }}>PASTA / DIRETÓRIO (Incorreto!)</span>
+                              ) : dockerDiagnostic?.probed_sockets?.some(s => s.is_socket) ? (
+                                <span style={{ color: 'var(--tblr-success)' }}>Socket Unix (Correto)</span>
+                              ) : (
+                                <span style={{ color: 'var(--tblr-muted)' }}>Ausente</span>
+                              )}
+                            </div>
+                            <div>
+                              <span style={{ color: 'var(--tblr-muted)' }}>Permissão Leitura: </span>
+                              <strong style={{ color: dockerDiagnostic?.probed_sockets?.some(s => s.readable) ? 'var(--tblr-success)' : 'var(--tblr-warning)' }}>
+                                {dockerDiagnostic?.probed_sockets?.some(s => s.readable) ? 'OK' : 'Negada'}
+                              </strong>
+                            </div>
+                          </div>
+                          {dockerDiagnostic?.last_error && (
+                            <div style={{ marginTop: '10px', padding: '6px 10px', background: 'var(--tblr-table-head-bg)', borderRadius: '4px', color: 'var(--tblr-danger)', fontSize: '0.74rem' }}>
+                              <strong>Último Erro do Sistema:</strong> {dockerDiagnostic.last_error}
+                            </div>
+                          )}
+                        </div>
+
+                        {/* Step-by-step resolution box */}
+                        <div style={{ fontSize: '0.82rem', lineHeight: '1.6', color: 'var(--tblr-body-color)' }}>
+                          <div style={{ fontWeight: '600', marginBottom: '6px', color: 'var(--tblr-primary)' }}>
+                            Como resolver no Easypanel (Passo a Passo):
+                          </div>
+                          <ol style={{ paddingLeft: '20px', margin: '0 0 12px 0' }}>
+                            <li>No Easypanel, abra este serviço (<strong>aiagent</strong>).</li>
+                            <li>Acesse a aba <strong>Mounts (Montagens)</strong>.</li>
+                            <li>
+                              Verifique o campo <strong>Type</strong>: Selecione obrigatoriamente <strong>Bind</strong> (NUNCA selecione "Volume", pois volumes criam pastas vazias).
+                            </li>
+                            <li>
+                              Preencha os caminhos: Host Path: <code>/var/run/docker.sock</code> &rarr; Mount Path: <code>/var/run/docker.sock</code>.
+                            </li>
+                            <li style={{ color: 'var(--tblr-danger)', fontWeight: '600' }}>
+                              🚨 CRÍTICO: Após salvar, clique no botão "Deploy" no topo direito do Easypanel! No Easypanel, a montagem só é ativada após um novo Deploy.
+                            </li>
+                          </ol>
+                        </div>
+                      </div>
+                    )}
                   </td>
                 </tr>
               )}

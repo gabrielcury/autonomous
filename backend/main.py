@@ -178,7 +178,8 @@ def get_system_status():
             "total": total_count,
             "running": running_count,
             "stopped": total_count - running_count,
-            "is_docker_connected": docker_manager.is_connected
+            "is_docker_connected": docker_manager.is_connected,
+            "diagnostic": docker_manager.get_diagnostic()
         },
         "agent": {
             "version": settings.VERSION,
@@ -190,6 +191,11 @@ def get_system_status():
             "auto_monitor_enabled": settings.AUTO_MONITOR_ENABLED
         }
     }
+
+@app.get("/api/docker/diagnostic")
+def get_docker_diagnostic():
+    """Real-time diagnostic on Docker socket, permissions, and daemon connection."""
+    return docker_manager.get_diagnostic()
 
 @app.get("/api/containers")
 def get_containers():

@@ -9,6 +9,11 @@ export const api = {
   },
 
   // Containers
+  async getDockerDiagnostic() {
+    const res = await fetch(`${API_BASE}/docker/diagnostic`);
+    return res.json();
+  },
+
   async getContainers() {
     const res = await fetch(`${API_BASE}/containers`);
     return res.json();

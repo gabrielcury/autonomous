@@ -26,6 +26,8 @@ import {
 export default function OverviewDashboard({ 
   statusData, 
   containers, 
+  dockerDiagnostic,
+  onRefreshData,
   onSelectContainer, 
   onRestartContainer, 
   onTraceContainer, 
@@ -36,6 +38,16 @@ export default function OverviewDashboard({
 }) {
   const [searchTerm, setSearchTerm] = useState('');
   const [statusFilter, setStatusFilter] = useState('ALL');
+  const [isTestingSocket, setIsTestingSocket] = useState(false);
+
+  const handleTestSocket = async () => {
+    setIsTestingSocket(true);
+    try {
+      if (onRefreshData) await onRefreshData();
+    } finally {
+      setIsTestingSocket(false);
+    }
+  };
 
   const host = statusData?.host || {};
   const cpu = host.cpu || { overall_percent: 12.4, cores: 8, load_avg: [0.65, 0.58, 0.51] };
@@ -345,17 +357,56 @@ export default function OverviewDashboard({
                   {filteredContainers.length === 0 && (
                     <tr>
                       <td colSpan="5" style={{ padding: '32px 20px', textAlign: 'center' }}>
-                        <div style={{ color: 'var(--tblr-warning)', display: 'flex', alignItems: 'center', justifyContent: 'center', gap: '8px', marginBottom: '8px', fontWeight: '600' }}>
-                          <AlertTriangle size={18} />
-                          <span>Docker Socket (/var/run/docker.sock) não conectado</span>
-                        </div>
-                        <div style={{ fontSize: '0.8rem', color: 'var(--tblr-muted)', maxWidth: '520px', margin: '0 auto', lineHeight: '1.6' }}>
-                          Para listar e gerenciar todos os containeres da sua VPS, adicione o <strong>Bind Mount</strong> na aba <strong>Mounts (Volumes)</strong> do serviço no Easypanel:
-                          <div style={{ margin: '8px 0', padding: '8px 12px', background: 'var(--tblr-table-head-bg)', borderRadius: '6px', fontFamily: 'var(--font-mono)', fontSize: '0.78rem' }}>
-                            Host Path: <code>/var/run/docker.sock</code> &rarr; Mount Path: <code>/var/run/docker.sock</code>
+                        {containers?.length > 0 ? (
+                          <div style={{ color: 'var(--tblr-muted)', fontSize: '0.85rem' }}>
+                            Nenhum container encontrado com o filtro atual.
                           </div>
-                          Depois clique em <strong>Salvar</strong> e <strong>Deploy</strong>.
-                        </div>
+                        ) : (
+                          <div style={{ maxWidth: '580px', margin: '0 auto', textAlign: 'left' }}>
+                            <div style={{ 
+                              display: 'flex', 
+                              alignItems: 'center', 
+                              justifyContent: 'space-between',
+                              gap: '12px', 
+                              marginBottom: '12px',
+                              padding: '12px 14px',
+                              borderRadius: '6px',
+                              background: dockerDiagnostic?.probed_sockets?.some(s => s.is_directory) ? 'rgba(239, 68, 68, 0.12)' : 'rgba(245, 158, 11, 0.12)',
+                              border: dockerDiagnostic?.probed_sockets?.some(s => s.is_directory) ? '1px solid var(--tblr-danger)' : '1px solid var(--tblr-warning)'
+                            }}>
+                              <div style={{ display: 'flex', alignItems: 'center', gap: '8px' }}>
+                                <AlertTriangle size={18} color={dockerDiagnostic?.probed_sockets?.some(s => s.is_directory) ? 'var(--tblr-danger)' : 'var(--tblr-warning)'} />
+                                <span style={{ fontWeight: '600', fontSize: '0.88rem', color: dockerDiagnostic?.probed_sockets?.some(s => s.is_directory) ? 'var(--tblr-danger)' : 'var(--tblr-warning)' }}>
+                                  {dockerDiagnostic?.probed_sockets?.some(s => s.is_directory) 
+                                    ? 'Aviso: /var/run/docker.sock montado como Diretório/Pasta!' 
+                                    : 'Docker Socket não conectado'}
+                                </span>
+                              </div>
+                              <button
+                                onClick={handleTestSocket}
+                                disabled={isTestingSocket}
+                                className="btn btn-primary btn-sm"
+                                style={{ display: 'flex', alignItems: 'center', gap: '4px', fontSize: '0.75rem' }}
+                              >
+                                <RotateCw size={12} className={isTestingSocket ? 'animate-spin' : ''} />
+                                <span>{isTestingSocket ? 'Testando...' : 'Reconectar'}</span>
+                              </button>
+                            </div>
+
+                            <div style={{ fontSize: '0.8rem', color: 'var(--tblr-muted)', lineHeight: '1.6', marginBottom: '8px' }}>
+                              {dockerDiagnostic?.summary || 'Para que o agente liste e monitore todos os containeres da VPS:'}
+                            </div>
+
+                            <div style={{ padding: '10px 14px', background: 'var(--tblr-table-head-bg)', borderRadius: '6px', fontSize: '0.78rem', lineHeight: '1.5' }}>
+                              <div><strong>No Easypanel (Aba Mounts):</strong></div>
+                              <div>1. Tipo: <code>Bind</code> (não Volume)</div>
+                              <div>2. Host Path: <code>/var/run/docker.sock</code> &rarr; Mount Path: <code>/var/run/docker.sock</code></div>
+                              <div style={{ color: 'var(--tblr-danger)', fontWeight: '600', marginTop: '4px' }}>
+                                3. 🚨 CLIQUE NO BOTÃO "DEPLOY" no topo para aplicar a montagem no container!
+                              </div>
+                            </div>
+                          </div>
+                        )}
                       </td>
                     </tr>
                   )}
