@@ -29,7 +29,7 @@ export default function App() {
       os: { node: 'easypanel-vps', system: 'Linux', uptime_human: 'Carregando...' }
     },
     containers_summary: { total: 0, running: 0, stopped: 0, is_docker_connected: true },
-    agent: { version: '1.0.0', groq_configured: false, groq_model: 'llama-3.3-70b-versatile', whisper_model: 'whisper-large-v3', telegram_bot_active: false, telegram_configured: false, auto_monitor_enabled: false }
+    agent: { version: '1.0.0', groq_configured: false, groq_model: 'openai/gpt-oss-120b', whisper_model: 'whisper-large-v3', telegram_bot_active: false, telegram_configured: false, auto_monitor_enabled: false }
   });
   const [containers, setContainers] = useState(INITIAL_CONTAINERS);
 

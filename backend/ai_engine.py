@@ -9,11 +9,12 @@ from backend.config import settings
 logger = logging.getLogger("ai_engine")
 
 class AegisBrain:
-    """Autonomous SRE Brain powered by Groq LLaMA 3.3 70B and Groq Whisper Large v3."""
+    """Autonomous SRE Brain powered by Groq (GPT OSS 120B / 20B, Qwen 27B) and Groq Whisper."""
 
     def __init__(self):
         self.api_key = settings.GROQ_API_KEY
         self.client = None
+        self.discovered_models: List[str] = []
         self._init_client()
 
     def _init_client(self):
@@ -21,11 +22,24 @@ class AegisBrain:
             try:
                 self.client = Groq(api_key=self.api_key)
                 logger.info("Groq AI Client initialized successfully.")
+                self._discover_available_models()
             except Exception as e:
                 logger.error(f"Failed to initialize Groq client: {e}")
                 self.client = None
         else:
             self.client = None
+
+    def _discover_available_models(self):
+        """Attempt to fetch active models from Groq API account."""
+        if not self.client:
+            return
+        try:
+            model_list = self.client.models.list()
+            self.discovered_models = [m.id for m in getattr(model_list, "data", [])]
+            logger.info(f"Discovered {len(self.discovered_models)} models in Groq account: {self.discovered_models}")
+        except Exception as e:
+            logger.debug(f"Could not list Groq models: {e}")
+            self.discovered_models = []
 
     def update_api_key(self, new_key: str):
         self.api_key = new_key.strip()
@@ -33,23 +47,38 @@ class AegisBrain:
         self._init_client()
 
     def transcribe_audio(self, audio_bytes: bytes, filename: str = "voice.ogg") -> str:
-        """Transcribe voice audio to text using Groq Whisper Large v3."""
+        """Transcribe voice audio to text using Groq Whisper Large v3 or Turbo."""
         if not self.client:
             return "[Aviso: Chave GROQ_API_KEY não configurada. Configure no painel para habilitar transcrição de voz.]"
 
-        try:
-            audio_file = io.BytesIO(audio_bytes)
-            audio_file.name = filename
-            transcription = self.client.audio.transcriptions.create(
-                file=(filename, audio_file),
-                model=settings.GROQ_WHISPER_MODEL,
-                language="pt",
-                response_format="text"
-            )
-            return str(transcription).strip()
-        except Exception as e:
-            logger.error(f"Error transcribing audio with Groq: {e}")
-            return f"[Erro na transcrição de voz: {str(e)}]"
+        audio_models = [
+            settings.GROQ_WHISPER_MODEL,
+            "whisper-large-v3",
+            "whisper-large-v3-turbo"
+        ]
+        seen_models = set()
+        last_err = ""
+
+        for m in audio_models:
+            if not m or m in seen_models:
+                continue
+            seen_models.add(m)
+            try:
+                audio_file = io.BytesIO(audio_bytes)
+                audio_file.name = filename
+                transcription = self.client.audio.transcriptions.create(
+                    file=(filename, audio_file),
+                    model=m,
+                    language="pt",
+                    response_format="text"
+                )
+                return str(transcription).strip()
+            except Exception as e:
+                last_err = str(e)
+                logger.warning(f"Whisper transcription failed with model {m}: {e}")
+                continue
+
+        return f"[Erro na transcrição de voz: {last_err}]"
 
     def consult_sre_agent(self, user_query: str, system_context: Dict[str, Any], conversation_history: Optional[List[Dict[str, str]]] = None) -> str:
         """Consult SRE Agent with full live server telemetry and container status."""
@@ -96,30 +125,62 @@ Diretrizes de resposta:
 
         messages.append({"role": "user", "content": user_query})
 
-        try:
-            completion = self.client.chat.completions.create(
-                model=settings.GROQ_MODEL,
-                messages=messages,
-                temperature=0.2,
-                max_tokens=1500
-            )
-            return completion.choices[0].message.content or "Sem resposta da LLM."
-        except Exception as e:
-            logger.error(f"Groq Chat Completion error: {e}")
-            # Try fast model fallback
+        # Build candidate models pool in prioritized order
+        candidates: List[str] = []
+
+        # 1. Configured models
+        if settings.GROQ_MODEL and settings.GROQ_MODEL not in candidates:
+            candidates.append(settings.GROQ_MODEL)
+        if settings.GROQ_FAST_MODEL and settings.GROQ_FAST_MODEL not in candidates:
+            candidates.append(settings.GROQ_FAST_MODEL)
+
+        # 2. Known active Groq models (GPT OSS 120B / 20B, Qwen 3.8 27B)
+        supported_pool = [
+            "openai/gpt-oss-120b",
+            "openai/gpt-oss-20b",
+            "qwen/qwen3.8-27b",
+            "gpt-oss-120b",
+            "gpt-oss-20b",
+            "qwen-3.8-27b"
+        ]
+        for m in supported_pool:
+            if m not in candidates:
+                candidates.append(m)
+
+        # 3. Discovered models from account
+        if self.discovered_models:
+            for m in self.discovered_models:
+                if any(k in m.lower() for k in ["gpt-oss", "qwen", "llama", "deepseek"]) and m not in candidates:
+                    candidates.append(m)
+
+        last_error = ""
+        for model_name in candidates:
             try:
                 completion = self.client.chat.completions.create(
-                    model=settings.GROQ_FAST_MODEL,
+                    model=model_name,
                     messages=messages,
                     temperature=0.2,
-                    max_tokens=1000
+                    max_tokens=1500
                 )
-                return completion.choices[0].message.content or "Sem resposta da LLM."
-            except Exception as e2:
-                return f"Erro ao comunicar com a IA do Groq: {str(e2)}. Verifique sua cota gratuita ou chave de API."
+                ans = completion.choices[0].message.content
+                if ans:
+                    logger.info(f"Groq Chat Completion succeeded with model: {model_name}")
+                    return ans
+            except Exception as e:
+                err_str = str(e)
+                last_error = err_str
+                logger.warning(f"Groq Chat Completion attempt failed with model '{model_name}': {err_str}")
+                continue
+
+        logger.error(f"All Groq model attempts failed. Last error: {last_error}. Returning intelligent SRE heuristic.")
+        heuristic_reply = self._heuristic_sre_response(user_query, system_context)
+        return (
+            f"{heuristic_reply}\n\n"
+            f"> 💡 *Nota Groq: Modelos testados ({', '.join(candidates[:2])}). Erro na API: {last_error[:110]}... Resposta gerada com sucesso via motor SRE interno.*"
+        )
 
     def _heuristic_sre_response(self, query: str, context: Dict[str, Any]) -> str:
-        """Intelligent fallback when Groq API key is not yet set."""
+        """Intelligent fallback when Groq API key is not yet set or during offline recovery."""
         q = query.lower()
         if "status" in q or "servidor" in q:
             cpu = context.get("cpu", {}).get("overall_percent", 0)
@@ -129,9 +190,9 @@ Diretrizes de resposta:
 - **CPU**: {cpu}% de utilização
 - **Memória**: {mem}% ocupada
 - **Containeres ativos**: {len(containers)}
-- **Saúde Geral**: Operacional com alertas pontuais.
+- **Saúde Geral**: Operacional com telemetria estável.
 
-*(Dica: Adicione sua GROQ_API_KEY gratuita no menu de configurações para ativar o raciocínio completo com LLaMA 3.3 70B)*"""
+*(Dica: Configure sua GROQ_API_KEY gratuita no menu de configurações para ativar o raciocínio completo com GPT OSS 120B)*"""
 
         if "memoria" in q or "trace" in q or "debug" in q:
             containers = context.get("containers", [])
@@ -149,10 +210,10 @@ Todos estão operando dentro dos parâmetros de estabilidade."""
             return "📦 **Backup & Disaster Recovery**: Você pode disparar um snapshot completo via menu ou baixar os arquivos tar.gz de volumes e bancos diretamente pelo painel!"
 
         if "iac" in q or "terraform" in q or "ansible" in q:
-            return "🏗️ **IaC Generator**: A conversão de todos os containeres atuais para Terraform (kreuzwerker/docker) e Ansible playbooks está disponível no menu 'IaC Studio' para download imediato em .zip!"
+            return "🏗️ **IaC Generator**: A conversão de todos os containeres atuais para Terraform (provedor docker) e Ansible playbooks está disponível no menu 'IaC Studio' para download imediato em .zip!"
 
         return f"""🤖 **AegisSRE Agente Autônomo**:
 Recebi sua mensagem: *"{query}"*.
-O agente está monitorando ativamente seus containeres e host. Para respostas ultra-avançadas com análise preditiva via **LLaMA 3.3 70B** do Groq, certifique-se de configurar sua `GROQ_API_KEY` gratuita nas Configurações!"""
+O agente está monitorando ativamente seus containeres e host. Para respostas ultra-avançadas com análise preditiva via **GPT OSS 120B** do Groq, certifique-se de configurar sua `GROQ_API_KEY` gratuita nas Configurações!"""
 
 ai_brain = AegisBrain()

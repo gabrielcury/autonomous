@@ -80,7 +80,7 @@ export default function TelegramStatus({ statusData, containers, onOpenSettings 
     id: 1,
     sender: 'bot',
     time: '23:38',
-    text: `🛡️ **AegisSRE - Central de Comando Autônoma**\n\n🖥️ **Host:** \`${nodeName}\` (Linux x86_64)\n⚡ **CPU:** \`[${makeBar(cpuPct)}]\` ${cpuPct}%\n💾 **RAM:** \`[${makeBar(memPct)}]\` ${memPct}%\n🐳 **Containeres:** ${runningC}/${totalC} operacionais\n🧠 **IA:** Groq LLaMA 3.3 70B & Whisper Large v3\n\nEscolha uma opção interativa ou envie mensagens de texto e **voz** 🎙️:`,
+    text: `🛡️ **AegisSRE - Central de Comando Autônoma**\n\n🖥️ **Host:** \`${nodeName}\` (Linux x86_64)\n⚡ **CPU:** \`[${makeBar(cpuPct)}]\` ${cpuPct}%\n💾 **RAM:** \`[${makeBar(memPct)}]\` ${memPct}%\n🐳 **Containeres:** ${runningC}/${totalC} operacionais\n🧠 **IA:** Groq GPT OSS 120B & Whisper Large v3\n\nEscolha uma opção interativa ou envie mensagens de texto e **voz** 🎙️:`,
     keyboard: [
       [
         { text: '▶️ Iniciar Agente SRE', action: 'agent_start' },
@@ -745,7 +745,7 @@ export default function TelegramStatus({ statusData, containers, onOpenSettings 
           id: Date.now() + 1,
           sender: 'bot',
           time: getCurrentTime(),
-          text: `🤖 **Resposta do Agente SRE (Groq LLaMA 3.3 70B):**\n\nAnalisei sua dúvida: _"${userText}"_.\n\nSua infraestrutura no Easypanel conta com ${containers?.length || 0} container(es) monitorados em tempo real via Docker Socket. Você pode utilizar \`/charts\` para conferir os gráficos visuais ou clicar nos botões abaixo:`,
+          text: `🤖 **Resposta do Agente SRE (Groq GPT OSS 120B):**\n\nAnalisei sua dúvida: _"${userText}"_.\n\nSua infraestrutura no Easypanel conta com ${containers?.length || 0} container(es) monitorados em tempo real via Docker Socket. Você pode utilizar \`/charts\` para conferir os gráficos visuais ou clicar nos botões abaixo:`,
           keyboard: [
             [
               { text: '📈 Ver Gráficos (PNG)', action: 'menu_charts' },
@@ -806,7 +806,7 @@ export default function TelegramStatus({ statusData, containers, onOpenSettings 
                   <div className="telegram-bot-name">AegisSRE Bot</div>
                   <div className="telegram-bot-status">
                     <span className="status-dot status-green status-dot-animated" style={{ width: '6px', height: '6px' }}></span>
-                    <span>bot • online (Groq LLaMA 3.3 70B, Whisper v3 &amp; PNG Charts)</span>
+                    <span>bot • online (Groq GPT OSS 120B, Whisper v3 &amp; PNG Charts)</span>
                   </div>
                 </div>
               </div>
@@ -959,7 +959,7 @@ export default function TelegramStatus({ statusData, containers, onOpenSettings 
                     <span>2. Comandos de Voz (Groq Whisper v3)</span>
                   </div>
                   <p style={{ color: 'var(--tblr-muted)', lineHeight: '1.4' }}>
-                    Mande áudios pelo Telegram (ex: <em>"Aegis, me envie o gráfico de memória e reinicie o PHP"</em>). O Whisper transcreve e o LLaMA 3.3 70B executa as ações.
+                    Mande áudios pelo Telegram (ex: <em>"Aegis, me envie o gráfico de memória e reinicie o PHP"</em>). O Whisper transcreve e o GPT OSS 120B executa as ações.
                   </p>
                 </div>
 

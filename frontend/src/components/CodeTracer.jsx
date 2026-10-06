@@ -116,7 +116,7 @@ export default function CodeTracer({ containers, onConsultAiWithContext }) {
               {loading ? (
                 <>
                   <div className="spinner" style={{ width: '14px', height: '14px', border: '2px solid #fff', borderTopColor: 'transparent', borderRadius: '50%', animation: 'spin 0.6s linear infinite' }}></div>
-                  <span>Analisando com Groq LLaMA 3.3 70B...</span>
+                  <span>Analisando com Groq GPT OSS 120B...</span>
                 </>
               ) : (
                 <>
@@ -228,7 +228,7 @@ export default function CodeTracer({ containers, onConsultAiWithContext }) {
                   className="btn btn-primary btn-sm"
                 >
                   <Sparkles size={13} />
-                  <span>Consultar Solução com LLaMA 3.3</span>
+                  <span>Consultar Solução com GPT OSS</span>
                 </button>
               </div>
             </div>

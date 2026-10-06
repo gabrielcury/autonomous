@@ -346,7 +346,7 @@ class TelegramAegisBot:
             f"⚡ **CPU:** `[{make_progress_bar(cpu_pct)}]` {cpu_pct}%\n"
             f"💾 **RAM:** `[{make_progress_bar(mem_pct)}]` {mem_pct}%\n"
             f"🐳 **Containeres:** {running_count}/{len(containers)} ativos • 0 quedas\n"
-            f"🧠 **IA:** Groq LLaMA 3.3 70B & Whisper Large v3\n\n"
+            f"🧠 **IA:** Groq GPT OSS 120B & Whisper Large v3\n\n"
             "Escolha uma ação interativa abaixo ou envie áudios de **voz** 🎙️:"
         )
 

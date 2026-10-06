@@ -18,9 +18,10 @@ services:
     environment:
       - PORT=8000
       - HOST=0.0.0.0
-      # Groq LLM (Free tier: llama-3.3-70b-versatile, whisper-large-v3)
+      # Groq LLM (Free tier: openai/gpt-oss-120b, openai/gpt-oss-20b, whisper-large-v3)
       - GROQ_API_KEY=${GROQ_API_KEY}
-      - GROQ_MODEL=${GROQ_MODEL:-llama-3.3-70b-versatile}
+      - GROQ_MODEL=${GROQ_MODEL:-openai/gpt-oss-120b}
+      - GROQ_FAST_MODEL=${GROQ_FAST_MODEL:-openai/gpt-oss-20b}
       - GROQ_WHISPER_MODEL=${GROQ_WHISPER_MODEL:-whisper-large-v3}
       # Telegram Bot Settings
       - TELEGRAM_BOT_TOKEN=${TELEGRAM_BOT_TOKEN}

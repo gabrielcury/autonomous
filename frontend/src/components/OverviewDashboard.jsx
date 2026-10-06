@@ -431,7 +431,7 @@ export default function OverviewDashboard({
                       <Activity size={18} color="var(--tblr-primary)" />
                       <span>SRE Watchdog Autônomo</span>
                     </h4>
-                    <div className="card-subtitle">IA Groq LLaMA 3.3 70B &amp; Whisper v3</div>
+                    <div className="card-subtitle">IA Groq GPT OSS 120B &amp; Whisper v3</div>
                   </div>
                   {isAgentActive ? (
                     <span className="badge badge-subtle-success">
@@ -520,7 +520,7 @@ export default function OverviewDashboard({
                         Motor de Inteligência
                       </div>
                       <div style={{ color: 'var(--tblr-body-color)' }}>
-                        Groq Cloud • LLaMA 3.3 70B Versatile (Camada Gratuita)
+                        Groq Cloud • GPT OSS 120B Versatile (Camada Gratuita)
                       </div>
                     </div>
 

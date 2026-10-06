@@ -92,7 +92,7 @@ Como posso te ajudar agora? Você pode digitar, clicar nas sugestões abaixo ou 
           <div className="page-pretitle">COPILOT &amp; DIAGNÓSTICO</div>
           <h2 className="page-title">
             <Zap size={22} color="var(--tblr-primary)" />
-            <span>SRE Brain Console (Groq LLaMA 3.3 70B)</span>
+            <span>SRE Brain Console (Groq GPT OSS 120B)</span>
           </h2>
         </div>
         <div className="btn-list">
@@ -133,7 +133,7 @@ Como posso te ajudar agora? Você pode digitar, clicar nas sugestões abaixo ou 
                 <div>
                   <h3 className="card-title">Sessão Interativa com o Agente SRE</h3>
                   <div className="card-subtitle">
-                    Modelo: <strong>llama-3.3-70b-versatile</strong> • Contexto: Telemetria Completa do Docker
+                    Modelo: <strong>openai/gpt-oss-120b</strong> • Contexto: Telemetria Completa do Docker
                   </div>
                 </div>
               </div>
@@ -194,7 +194,7 @@ Como posso te ajudar agora? Você pode digitar, clicar nas sugestões abaixo ou 
                     <Bot size={16} />
                   </div>
                   <div style={{ padding: '8px 14px', background: 'var(--tblr-card-bg)', border: '1px solid var(--tblr-card-border)', borderRadius: '8px', fontSize: '0.8rem', color: 'var(--tblr-muted)' }}>
-                    O agente SRE está raciocinando com LLaMA 3.3 70B...
+                    O agente SRE está raciocinando com GPT OSS 120B...
                   </div>
                 </div>
               )}

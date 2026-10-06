@@ -99,7 +99,7 @@ export default function SettingsModal({ isOpen, onClose, onSettingsUpdated }) {
                 </a>
               </div>
               <p style={{ fontSize: '0.75rem', color: 'var(--tblr-muted)', marginBottom: '8px' }}>
-                Necessária para LLaMA 3.3 70B e transcrição de áudio Whisper Large v3.
+                Necessária para GPT OSS 120B e transcrição de áudio Whisper Large v3.
               </p>
               <input
                 type="password"
